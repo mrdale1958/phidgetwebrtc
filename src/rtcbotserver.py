@@ -388,6 +388,25 @@ async def index(request):
       <img src="cedulas/Tilty 17.png" id="site17_img">
       <div class="site_name">La Central (Los Mochis)</div>
     </div>  
+    <div id='dashboard'>
+      <div class='number' id='tiltdatarate'></div>
+      <div class='number' id='spindatarate'></div>
+      <div id='zoomer'>
+        <div class='number' id='rotation'></div>
+        <div id='EncoderID'></div>
+        <div id='EncoderIndex'></div>
+        <div id='EncoderDelta'></div>
+        <div id='EncoderElapsedTime'></div>
+        <div id='EncoderPosition'></div>
+      </div>
+      <div id='tilter'>
+        <div class='numberpair' id='accelerometer'></div>
+        <div id='TiltsensorID'></div>
+        <div id='TiltX'></div>
+        <div id='TiltY'></div>
+        <div id='TiltMagnitude'></div>
+      </div>
+    </div>
 <ul id="messages"></ul>  
         </body>
     </html>

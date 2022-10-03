@@ -547,11 +547,12 @@ var currentZoom = 0;
 var targetRectangle;
 var currentScale = 1.0;
 var mapData = [];
-var clicksPerRev =  256; // weirdly not 3.14159 * 4 *
+var clicksPerRev =  3200; // weirdly not 3.14159 * 4 *
 var revsPerFullZoom = (maxZoom - minZoom)/8;
 var clicksPerZoomLevel =  clicksPerRev / revsPerFullZoom;
 var maxClicks = clicksPerRev * revsPerFullZoom * 1.0;
 var currentSpinPosition = 0;
+var pixelsPerGravitron = 100;
 
 
 // General globals
@@ -709,7 +710,19 @@ function setInstructions(texta, textb)
         }
       }
     }
-    map.setZoom(Math.min(maxZoom,Math.max(minZoom,zoomLayers[newLayer]['mapZoom'])));
+    // map.setZoom(Math.min(maxZoom,Math.max(minZoom,zoomLayers[newLayer]['mapZoom'])));
+    map.setZoom(Math.min(maxZoom,Math.max(minZoom,newLayer)));
+    let now = Date.now();
+    let elapsedTime = now - lastZoomMessageTime 
+    sumZoomTimes += elapsedtime;
+    zoomMessageCount += 1;s
+    if ( zoomWindowMessageCount > 100) {
+      zoomWindowMessageCount = 1;
+      sumZoomWindowTimes = 0;
+    }
+    sumZoomWindowTimes += elapsedtime;
+    zoomWindowMessageCount += 1;
+    document.getElementById('zoomdatarate').innerHTML("Zoom: total " + sumZoomTimes/zoomMessageCount + " window " + sumZoomWindowTimes/zoomWindowMessageCount);
     //lastZoom = map.getZoom();
     lastZoom = newLayer;
     console.log("entered layer " + newLayer + " at " + map.getCenter());
@@ -1070,11 +1083,21 @@ var handleWebSocketMessage = function (event) {
     document.getElementById('TiltMagnitude').innerHTML(jsonData.packet.tiltMagnitude);
   } else if (jsonData.gesture == 'pan') {
     //var dampingZoom = map.getZoom()*minZoom/maxZoom;
-
     if (jsonData.vector.x == 0.0 && jsonData.vector.y == 0.0) return;  
     //console.log("sensor message: " + jsonData.type + "-" + jsonData.vector.x + "," +jsonData.vector.y);
-
-    if (zoomLayers[currentZoom]['pannable']) map.panBy(100*jsonData.vector.x, 100*jsonData.vector.y);
+    document.getElementById('accelerometer').innerHTML(jsonData.vector.x + "," +jsonData.vector.y);
+    let now = Date.now();
+    let elapsedTime = now - lastTiltMessageTime 
+    sumTiltTimes += elapsedtime;
+    tiltMessageCount += 1;
+    if ( tiltWindowMessageCount > 100) {
+      tiltWindowMessageCount = 1;
+      sumTiltWindowTimes = 0;
+    }
+    sumTiltWindowTimes += elapsedtime;
+    tiltWindowMessageCount += 1;
+    document.getElementById('tiltdatarate').innerHTML("total " + sumTiltTimes/tiltMessageCount + " window " + sumTiltWindowTimes/tiltWindowMessageCount);
+    if (zoomLayers[currentZoom]['pannable']) map.panBy(pixelsPerGravitron*jsonData.vector.x, pixelsPerGravitron*jsonData.vector.y);
     //paintTarget();
   } 
   else if (jsonData.gesture == 'zoom') 
