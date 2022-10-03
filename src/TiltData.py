@@ -4,6 +4,8 @@ from Phidget22.Devices.Accelerometer import *
 import logging
 from Phidget22.PhidgetException import *
 import datetime
+import json as JSON
+
 
 class TiltData:
     _all = set()
@@ -17,6 +19,7 @@ class TiltData:
                  elapsedtime=0.0,
                  position=0):
         TiltData._all.add(self)
+        self.config = config
         self.gestureProcessor = TiltGestureProcessor(self, config)
         self.queueLength = config['accelerometerQueueLength']
         self.components = [ Queue(self.queueLength),
@@ -52,6 +55,7 @@ class TiltData:
 
     def setZeros(self,x0,y0,z0):
         self.zeros = [ x0, y0, z0 ]
+        print("set zeros to", self.zeros)
 
     def set_accelerometerZero(self, index, newZero):
         self.zeros[index] = newZero
@@ -64,29 +68,45 @@ class TiltData:
                             Queue(self.queueLength),
                             Queue(self.queueLength) ]
         
-        
-
-    def ingestSpatialData(self, sensorData):
-        if self.components[0].size() == 0:
-            self.setZeros(sensorData.Acceleration[0],sensorData.Acceleration[1],sensorData.Acceleration[2])
-        newX = config['flipX'] * (sensorData.Acceleration[0] - self.zeros[0])
-        newY = config['flipY'] * (sensorData.Acceleration[1] - self.zeros[1])
-        newZ = sensorData.Acceleration[2] - self.zeros[2]
+    def populateQueues(self, newX, newY, newZ):
         self.variances[0].enqueue(newX - self.components[0].head())
         self.variances[1].enqueue(newY - self.components[1].head())
         self.variances[2].enqueue(newZ - self.components[2].head())
         self.components[0].enqueue(newX)
         self.components[1].enqueue(newY)
         self.components[2].enqueue(newZ) 
+
+    def ingestSpatialData(self, sensorData):
+        if self.components[0].size() == 0:
+            self.setZeros(sensorData.Acceleration[0],sensorData.Acceleration[1],sensorData.Acceleration[2])
+        if (self.config['swapXY'] == 1) :
+            newY = self.config['flipY'] * (sensorData.Acceleration[0] - self.zeros[0])
+            newX = self.config['flipX'] * (sensorData.Acceleration[1] - self.zeros[1])
+        else: 
+            newX = self.config['flipX'] * (sensorData.Acceleration[0] - self.zeros[0])
+            newY = self.config['flipY'] * (sensorData.Acceleration[1] - self.zeros[1])
+        newZ = sensorData.Acceleration[2] - self.zeros[2]
+        self.populateQueues(newX, newY, newZ)
+        #print(newX, newY)
+        
      
     def ingest_accelerometerData(self, sensorData):
-        for index in range(3):
-            if self.components[index].size() == 0:
-                self.set_accelerometerZero(index,sensorData[index])
-            newX = sensorData[index] - self.zeros[index]
-            self.variances[index].enqueue(newX - self.components[index].head())
-            self.components[index].enqueue(newX)
- 
+        
+        if self.components[0].size() == 0:
+                if (self.config['swapXY'] == 1) :
+                    self.setZeros(sensorData[1],sensorData[0],sensorData[2])
+                else:
+                    self.setZeros(sensorData[0],sensorData[1],sensorData[2])
+        if (self.config['swapXY'] == 1) :
+            newY = self.config['flipY'] * (sensorData[0] - self.zeros[0])
+            newX = self.config['flipX'] * (sensorData[1] - self.zeros[1])
+        else: 
+            newX = self.config['flipX'] * (sensorData[0] - self.zeros[0])
+            newY = self.config['flipY'] * (sensorData[1] - self.zeros[1])
+        newZ = sensorData [2] - self.zeros[2]
+        self.populateQueues(newX, newY, newZ)
+        #print(self.config['swapXY'],sensorData, newX, newY)
+
 
                       
     def getJSON(self):
@@ -117,8 +137,8 @@ class TiltData:
         TiltData._logger.error('_accelerometerError %s', description, extra=d)
 
     def _accelerometerAccelerationChanged(e, acceleration, timestamp):
-        # print("Acceleration: %f  %f  %f" % (acceleration[0], acceleration[1], acceleration[2]))
-        # print("Timestamp: %f\n" % timestamp)
+        #print("Acceleration: %f  %f  %f" % (acceleration[0], acceleration[1], acceleration[2]))
+        #print("Timestamp: %f\n" % timestamp)
         #TiltData._logger.info('accelerometer data %s', "checking", extra=d)
         for tilter in TiltData._all:
             #print(tilter.serialNumber, e.getDeviceSerialNumber(), len(TiltData._all ))     
