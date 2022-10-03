@@ -1,3 +1,4 @@
+from hashlib import new
 import json
 import time
 
@@ -17,7 +18,8 @@ class GestureProcessor:
         self.action = None
         #if retval:
         #    print(repr(retval))
-        return json.dumps(retval) 
+        #return json.dumps(retval) 
+        return (retval)
      
 class SpinGestureProcessor(GestureProcessor):
     def __init__(self,sensor,config):
@@ -74,6 +76,7 @@ class TiltGestureProcessor(GestureProcessor):
             else:
                 self.Ytilt = 0.0
             # claculate the current tilt vector and put in self.Xtilt,self.Ytilt if not flat return true else false
+            #print(self.sensor.components[0].items,self.sensor.components[1].items)
             return retval
         return retval
     

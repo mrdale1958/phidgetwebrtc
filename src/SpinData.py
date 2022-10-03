@@ -60,24 +60,24 @@ class SpinData:
     #Event Handler Callback Functions
     def encoderAttached(e):
         attached = e
-        try:
-            print("\nAttach Event Detected (Information Below)")
-            print("===========================================")
-            print("Library Version: %s" % attached.getLibraryVersion())
-            print("Serial Number: %d" % attached.getDeviceSerialNumber())
-            print("Channel: %d" % attached.getChannel())
-            print("Channel Class: %s" % attached.getChannelClass())
-            print("Channel Name: %s" % attached.getChannelName())
-            print("Device ID: %d" % attached.getDeviceID())
-            print("Device Version: %d" % attached.getDeviceVersion())
-            print("Device Name: %s" % attached.getDeviceName())
-            print("Device Class: %d" % attached.getDeviceClass())
-            print("\n")
+        # try:
+        #     print("\nAttach Event Detected (Information Below)")
+        #     print("===========================================")
+        #     print("Library Version: %s" % attached.getLibraryVersion())
+        #     print("Serial Number: %d" % attached.getDeviceSerialNumber())
+        #     print("Channel: %d" % attached.getChannel())
+        #     print("Channel Class: %s" % attached.getChannelClass())
+        #     print("Channel Name: %s" % attached.getChannelName())
+        #     print("Device ID: %d" % attached.getDeviceID())
+        #     print("Device Version: %d" % attached.getDeviceVersion())
+        #     print("Device Name: %s" % attached.getDeviceName())
+        #     print("Device Class: %d" % attached.getDeviceClass())
+        #     print("\n")
 
-        except PhidgetException as e:
-            print("Phidget Exception %i: %s" % (e.code, e.details))
-            print("Press Enter to Exit...\n")
-            readin = sys.stdin.read(1)
+        # except PhidgetException as e:
+        #     print("Phidget Exception %i: %s" % (e.code, e.details))
+        #     print("Press Enter to Exit...\n")
+        #     readin = sys.stdin.read(1)
 
         d = {'clientip': "spinner", 'user':"encoderAttached"}
         SpinData._logger.info('Encoder Attached! %s', 'good news', extra=d)
