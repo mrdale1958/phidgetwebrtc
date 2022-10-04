@@ -547,13 +547,25 @@ var currentZoom = 0;
 var targetRectangle;
 var currentScale = 1.0;
 var mapData = [];
-var clicksPerRev =  3200; // weirdly not 3.14159 * 4 *
+var clicksPerRev =  256; // weirdly not 3.14159 * 4 *
 var revsPerFullZoom = (maxZoom - minZoom)/8;
 var clicksPerZoomLevel =  clicksPerRev / revsPerFullZoom;
 var maxClicks = clicksPerRev * revsPerFullZoom * 1.0;
 var currentSpinPosition = 0;
-var pixelsPerGravitron = 100;
+var pixelsPerGravitron = 10;
 
+var sumTiltTimes = 0;
+var tiltMessageCount = 0;
+var tiltWindowMessageCount = 0;
+var sumTiltWindowTimes = 0;
+var lastTiltMessageTime = Date.now();
+var sumZoomTimes = 0;
+var zoomMessageCount = 0;
+var zoomWindowMessageCount = 0;
+var sumZoomWindowTimes = 0;
+var lastZoomMessageTime = Date.now();
+var pannable = true;
+var zoomable = true;
 
 // General globals
 var ws;
@@ -593,6 +605,7 @@ var mexicoCenter = null;
 var mexicoFullZoom = 5;
 var idleTimer;
 var map;
+var museum = null;
 
 
 var hotspot = {};
@@ -664,170 +677,32 @@ function setInstructions(texta, textb)
   console.log("doZoom " + newLayer);
   if (newLayer == lastZoom) return;
   if (newLayer < 0) newLayer = 0;
-  if (newLayer >= Object.keys(zoomLayers).length) newLayer = Object.keys(zoomLayers).length - 1;
+  //if (newLayer >= Object.keys(zoomLayers).length) newLayer = Object.keys(zoomLayers).length - 1;
   currentZoom = newLayer;
-  console.log("leaving layer " + lastZoom + " at " + map.getCenter());
-  if (lastZoom == -1)
-  {
-    // This can only happen when initializing
-    nextFeatureSet = zoomLayers[newLayer];
-    setInstructions(zoomLayers[newLayer]['spinInstruction'],zoomLayers[newLayer]['tiltInstruction']);
-    for (featureKey in nextFeatureSet) 
-    {
-      if ( featureKey == 'pannable' || featureKey == 'mapZoom' ) continue;
-      if (  nextFeatureSet[featureKey] == true)
-      {
-        console.log("moving to " + hotspot[featureKey] + " and opening open cedula for layer " + featureKey + " in zoom layer " + lastZoom);
-        //fly to hotspot[featureKey] and open the badge
-        map.panTo(hotspot[featureKey].position);
-        openCedula(featureKey);
-      } 
-      else
-      {
-        // load/enable the shapefeature 
-        // strings indicate markers to turn on
-        if ( typeof(nextFeatureSet[featureKey]) == "string" )
-        {
-          if (hotspot[nextFeatureSet[featureKey]])
-          {
-            //console.log("lighting hotspot " + featureKey);
-
-            hotspot[nextFeatureSet[featureKey]].setMap(map);
-          }
-          //else console.log(nextFeatureSet[featureKey] + " has no marker ");
-        }
-        else
-          // false indicates a region of interest 
-        {
-
-          if (features[featureKey])
-
-          {
-            features[featureKey]['mapdata'].setMap(map);
-            features[featureKey]['mapdata'].setStyle(features[featureKey]['style']);
-          }
-          //else console.log(featureKey + " has no mapdata ");
-        }
-      }
-    }
+  //console.log("leaving layer " + lastZoom + " at " + map.getCenter());
     // map.setZoom(Math.min(maxZoom,Math.max(minZoom,zoomLayers[newLayer]['mapZoom'])));
-    map.setZoom(Math.min(maxZoom,Math.max(minZoom,newLayer)));
-    let now = Date.now();
-    let elapsedTime = now - lastZoomMessageTime 
-    sumZoomTimes += elapsedtime;
-    zoomMessageCount += 1;s
-    if ( zoomWindowMessageCount > 100) {
-      zoomWindowMessageCount = 1;
-      sumZoomWindowTimes = 0;
-    }
-    sumZoomWindowTimes += elapsedtime;
-    zoomWindowMessageCount += 1;
-    document.getElementById('zoomdatarate').innerHTML("Zoom: total " + sumZoomTimes/zoomMessageCount + " window " + sumZoomWindowTimes/zoomWindowMessageCount);
-    //lastZoom = map.getZoom();
-    lastZoom = newLayer;
-    console.log("entered layer " + newLayer + " at " + map.getCenter());
-    //paintTarget();
+    //map.setZoom(Math.min(maxZoom,Math.max(minZoom,newLayer)));
+    //if (zoomable) {
+    //  zoomable = false;
+      map.setZoom(newLayer);
+        //lastZoom = map.getZoom();
+      lastZoom = newLayer;
+      console.log("entered layer " + newLayer + " at " + map.getCenter()), Date.now();
+      //paintTarget();
+    //}
     return;
 
   }  
-  currentFeatureSet = zoomLayers[lastZoom];
-  nextFeatureSet = zoomLayers[newLayer];
-  for (featureKey in currentFeatureSet)
-  {
-    if ( featureKey == 'pannable' ||
-        featureKey == 'mapZoom' || 
-        featureKey == 'spinInstruction' || 
-        featureKey == 'tiltInstruction' || 
-        currentFeatureSet[featureKey] == nextFeatureSet[featureKey] ) continue;
-    if ( currentFeatureSet[featureKey] == true)
-    {
-      console.log("closing open cedula for layer " + featureKey + " in zoom layer " + lastZoom);
-      //document.getElementById(featureKey).style.display = "none";
-      closeCedula(featureKey)
-    } 
-    else
-    {
-      //unload the feature
-      if ( typeof(currentFeatureSet[featureKey]) == "string" )
-      {
-        //console.log("closing open cedula for site " + featureKey + " at " + currentFeatureSet[featureKey] + " in zoom layer " + lastZoom);
-        if (hotspot[currentFeatureSet[featureKey] ])
-        {
-          //console.log("killing hotspot " + featureKey);
-          hotspot[currentFeatureSet[featureKey] ].setMap(null);
-        }
-
-      }
-      else
-      {
-          //map.data.remove(featureKey);
-          if (features[featureKey])
-
-          {              
-            features[featureKey]['mapdata'].setMap(null);
-
-          }
-        }
-      }
-    }
-    nextFeatureSet = zoomLayers[newLayer];
-    setInstructions(zoomLayers[newLayer]['spinInstruction'],zoomLayers[newLayer]['tiltInstruction']);
-    for (featureKey in nextFeatureSet) 
-    {
-      if ( featureKey == 'pannable' || 
-        featureKey == 'mapZoom' || 
-        featureKey == 'spinInstruction' || 
-        featureKey == 'tiltInstruction' || 
-        currentFeatureSet[featureKey] == nextFeatureSet[featureKey] ) continue;
-      if (  nextFeatureSet[featureKey] == true)
-      {
-        console.log("moving to " + hotspot[featureKey] + " and opening open cedula for layer " + featureKey + " in zoom layer " + newLayer);
-      //fly to hotspot[featureKey] and open the badge
-      map.panTo(hotspot[featureKey].position);
-      openCedula(featureKey);
-    } 
-    else
-    {
-      // load/enable the shapefeature 
-      // strings indicate markers to turn on
-      if ( typeof(nextFeatureSet[featureKey]) == "string" )
-      {
-        if (hotspot[nextFeatureSet[featureKey]])
-        {
-          //console.log("lighting hotspot " + featureKey);
-
-          hotspot[nextFeatureSet[featureKey]].setMap(map);
-        }
-        //else console.log(nextFeatureSet[featureKey] + " has no marker ");
-      }
-      else
-        // false indicates a region of interest 
-      {
-
-        if (features[featureKey])
-
-        {
-          features[featureKey]['mapdata'].setMap(map);
-          features[featureKey]['mapdata'].setStyle(features[featureKey]['style']);
-        }
-        //else console.log(featureKey + " has no mapdata ");
-      }
-    }
-
-  }
-  map.setZoom(Math.min(maxZoom,Math.max(minZoom,zoomLayers[newLayer]['mapZoom'])));
-  //lastZoom = map.getZoom();
-  lastZoom = newLayer;
-  console.log("entered layer " + newLayer + " at " + map.getCenter());
-  //paintTarget();
-
-} 
-
+ 
 
 function startIdleTimer() 
 {
   idleTimer = setTimeout(function(){
-    window.location.reload(1);
+    //window.location.reload(1);
+    if (map && museum) {
+      map.panTo(museum)
+      map.setZoom(8);
+    }
   }, 10 * 60 * 1000);
 }
 
@@ -860,11 +735,12 @@ function shapeloaded(newfeatures)
 function initializemap() {
   if (map == null) {
     var mapOptions = {
-      center: mexicoCenter,
+      center: museum,
       zoom : minZoom,
       disableDefaultUI: true,
       backgroundColor: '#000000',
       mapTypeId: google.maps.MapTypeId.HYBRID,
+      isFractionalZoomEnabled: true,
     };
     //mapTypeId: google.maps.MapTypeId.HYBRID,
     map = new google.maps.Map(document.getElementById('map-canvas'), mapOptions);
@@ -876,11 +752,10 @@ function initializemap() {
       strokeWeight: 1
     });
     featuresets = {} ;
-    mexicoCenter = new google.maps.LatLng(23.43348438907877, -103.05326881250002);
-    trapiche = new google.maps.LatLng(25.790466,-108.985886);
+    museum = new google.maps.LatLng(40.76678363966126, -111.90339475932488);
     var myLatLng = new google.maps.LatLng(25.790466,-108.985886);
     var marker = new google.maps.Marker({
-      position: myLatLng,
+      position: museum,
       map: map,
       title: 'Click to zoom'
     });
@@ -907,7 +782,8 @@ function initializemap() {
 
     map.addListener('zoom_changed', function()
     {
-      console.log("got new zoom", map.getZoom(), zoomLayers[currentZoom]);
+      console.log("got new zoom", map.getZoom(), Date.now());
+      zoomable = true;
       //doZoom(map.getZoom());
       //map.data.forEach(function (feature) { map.data.remove(feature);});
     });
@@ -929,10 +805,11 @@ function initializemap() {
       map.data.overrideStyle(event.feature, {strokeWeight: 8});
     });
     
-    map.panTo(mexicoCenter);
+    map.panTo(museum);
     
 
     map.addListener('center_changed', function() {
+      pannable = true;
      });
 
     marker.addListener('click', function() {
@@ -940,7 +817,7 @@ function initializemap() {
       map.setCenter(marker.getPosition());
     });  
     targetRectangle =  new google.maps.Rectangle();
-    doZoom(0);
+    doZoom(minZoom);
 
   }
 };
@@ -1058,7 +935,7 @@ function zoomOut()
 }
 
 var handleWebRTCMessage = function (message) {
-  //console.log("handleWebRTCMessage", message);
+  console.log("handleWebRTCMessage", message);
   let payload = {};
   payload.data = message;
 
@@ -1071,48 +948,68 @@ var handleWebSocketMessage = function (event) {
   //var currentZoom = map.getZoom();
   currentFeatureSet = zoomLayers[lastZoom];
   if (jsonData.type == 'spin') {
-    document.getElementById('EncoderID').innerHTML(jsonData.packet.sensorID);
-    document.getElementById('EncoderIndex').innerHTML(jsonData.packet.encoderIndex);
-    document.getElementById('EncoderDelta').innerHTML(jsonData.packet.encoderDelta);
-    document.getElementById('EncoderElapsedTime').innerHTML(jsonData.packet.encoderElapsedTime);
-    document.getElementById('EncoderPosition').innerHTML(jsonData.packet.encoderPosition);
+    document.getElementById('EncoderID').innerHTML = sonData.packet.sensorID;
+    document.getElementById('EncoderIndex').innerHTML = jsonData.packet.encoderIndex;
+    document.getElementById('EncoderDelta').innerHTML = jsonData.packet.encoderDelta;
+    document.getElementById('EncoderElapsedTime').innerHTML = jsonData.packet.encoderElapsedTime;
+    document.getElementById('EncoderPosition').innerHTML = sonData.packet.encoderPosition;
   } else if (jsonData.type == 'tilt') {
-    document.getElementById('TiltsensorID').innerHTML(jsonData.packet.sensorID);
-    document.getElementById('TiltX').innerHTML(jsonData.packet.tiltX);
-    document.getElementById('TiltY').innerHTML(jsonData.packet.tiltY);
-    document.getElementById('TiltMagnitude').innerHTML(jsonData.packet.tiltMagnitude);
+    document.getElementById('TiltsensorID').innerHTML = jsonData.packet.sensorID;
+    document.getElementById('TiltX').innerHTML = jsonData.packet.tiltX;
+    document.getElementById('TiltY').innerHTML = jsonData.packet.tiltY;
+    document.getElementById('TiltMagnitude').innerHTML = jsonData.packet.tiltMagnitude;
   } else if (jsonData.gesture == 'pan') {
     //var dampingZoom = map.getZoom()*minZoom/maxZoom;
     if (jsonData.vector.x == 0.0 && jsonData.vector.y == 0.0) return;  
     //console.log("sensor message: " + jsonData.type + "-" + jsonData.vector.x + "," +jsonData.vector.y);
-    document.getElementById('accelerometer').innerHTML(jsonData.vector.x + "," +jsonData.vector.y);
+    document.getElementById('accelerometer').innerHTML = jsonData.vector.x.toFixed(4) + "," +jsonData.vector.y.toFixed(4);
     let now = Date.now();
-    let elapsedTime = now - lastTiltMessageTime 
-    sumTiltTimes += elapsedtime;
+    let elapsedTime = now - lastTiltMessageTime;
+    lastTiltMessageTime = now;
+    sumTiltTimes += elapsedTime;
     tiltMessageCount += 1;
     if ( tiltWindowMessageCount > 100) {
       tiltWindowMessageCount = 1;
       sumTiltWindowTimes = 0;
     }
-    sumTiltWindowTimes += elapsedtime;
+    sumTiltWindowTimes += elapsedTime;
     tiltWindowMessageCount += 1;
-    document.getElementById('tiltdatarate').innerHTML("total " + sumTiltTimes/tiltMessageCount + " window " + sumTiltWindowTimes/tiltWindowMessageCount);
-    if (zoomLayers[currentZoom]['pannable']) map.panBy(pixelsPerGravitron*jsonData.vector.x, pixelsPerGravitron*jsonData.vector.y);
-    //paintTarget();
+    document.getElementById('tiltdatarate').innerHTML = "Tilt total " + (sumTiltTimes/tiltMessageCount).toFixed(2) + 
+                  " window " + (sumTiltWindowTimes/tiltWindowMessageCount).toFixed(2);
+                 // if (zoomLayers[currentZoom]['pannable']) map.panBy(pixelsPerGravitron*jsonData.vector.x, pixelsPerGravitron*jsonData.vector.y);
+    //if (pannable) {
+      //pannable = false;
+      map.panBy(pixelsPerGravitron*jsonData.vector.x, pixelsPerGravitron*jsonData.vector.y);
+    //}
+                  //paintTarget();
   } 
   else if (jsonData.gesture == 'zoom') 
     {
 
       currentSpinPosition += jsonData.vector.delta;
-      //console.log(currentSpinPosition);
+      console.log("current spin position", currentSpinPosition, minZoom + currentSpinPosition/clicksPerZoomLevel, Date.now());
       //console.log("sensor message: " + jsonData.gesture + " " + jsonData.vector.delta + "; currentSpinPosition=" +currentSpinPosition);
       if (currentSpinPosition < 0) currentSpinPosition = 0;
-      var proposedZoom =  Math.floor(currentSpinPosition/clicksPerZoomLevel);
+      var proposedZoom =  minZoom + currentSpinPosition/clicksPerZoomLevel; //Math.floor(currentSpinPosition/clicksPerZoomLevel);
+      document.getElementById('rotation').innerHTML ="spin position " + currentSpinPosition + " new Zoom " + proposedZoom;
       restartIdleTimer();
-
+      let now = Date.now();
+      let elapsedTime = now - lastZoomMessageTime ;
+      lastZoomMessageTime = now;
+      sumZoomTimes += elapsedTime;
+      zoomMessageCount += 1;
+      if ( zoomWindowMessageCount > 100) {
+        zoomWindowMessageCount = 1;
+        sumZoomWindowTimes = 0;
+      }
+      sumZoomWindowTimes += elapsedTime;
+      zoomWindowMessageCount += 1;
+      document.getElementById('zoomdatarate').innerHTML ="Zoom: total " + sumZoomTimes/zoomMessageCount + " window " + sumZoomWindowTimes/zoomWindowMessageCount;
+  
       if (proposedZoom != currentZoom) 
       {
-        doZoom(Math.min(Object.keys(zoomLayers).length - 1, Math.max(0,proposedZoom))); 
+        //doZoom(Math.min(Object.keys(zoomLayers).length - 1, Math.max(0,proposedZoom))); 
+        doZoom(proposedZoom); 
       }
       else 
       {
@@ -1172,7 +1069,8 @@ var handleWebSocketMessage = function (event) {
       }
       currentSpinPosition += jsonData.vector.delta;
       if (currentSpinPosition < 0) currentSpinPosition = 0;
-      var proposedZoom = Math.floor(currentSpinPosition/clicksPerZoomLevel);
+      //var proposedZoom = Math.floor(currentSpinPosition/clicksPerZoomLevel);
+      var proposedZoom = minZoom + currentSpinPosition/clicksPerZoomLevel;
       if (proposedZoom != currentZoom) 
       {
         doZoom(proposedZoom);

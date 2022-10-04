@@ -90,8 +90,10 @@ class TiltGestureProcessor(GestureProcessor):
             self.action = { 'gesture': 'pan',
                   'vector': { 'x': self.Xtilt, 'y': self.Ytilt }
                         }
+            #print(self.action)
             return True 
         else:
+            print('failed to get tilt vector', self.sensor, self.sensor.components[0].size())
             return False 
             
        

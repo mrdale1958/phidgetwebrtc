@@ -15,7 +15,7 @@ def onAccelerometer0_AccelerationChange(self, acceleration, timestamp):
 
 def onAccelerometer0_Attach(self):
 	print("Attach!")
-
+	
 def onAccelerometer0_Detach(self):
 	print("Detach!")
 
@@ -42,6 +42,8 @@ def main():
 		accelerometer0.openWaitForAttachment(5000)
 
 		#Do stuff with your Phidgets here or in your event handlers.
+		accelerometer0.setDataRate(100)
+		accelerometer0.setAccelerationChangeTrigger(0.01)
 
 		try:
 			input("Press Enter to Stop\n")
