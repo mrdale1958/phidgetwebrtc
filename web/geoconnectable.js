@@ -963,8 +963,8 @@ var handleWebSocketMessage = function (event) {
     //var dampingZoom = map.getZoom()*minZoom/maxZoom;
     if (jsonData.vector.x == 0.0 && jsonData.vector.y == 0.0) return;  
     //console.log("sensor message: " + jsonData.type + "-" + jsonData.vector.x + "," +jsonData.vector.y);
-    document.getElementById('accelerometer').innerHTML = round(jsonData.vector.x,4) + "," +
-                                                        round(jsonData.vector.y,4);
+    document.getElementById('accelerometer').innerHTML = jsonData.vector.x.toPrecision(4) + "," +
+                                                        jsonData.vector.y.toPrecision(4);
     let now = Date.now();
     let elapsedTime = now - lastTiltMessageTime;
     lastTiltMessageTime = now;
@@ -1007,7 +1007,7 @@ var handleWebSocketMessage = function (event) {
       }
       sumZoomWindowTimes += elapsedTime;
       zoomWindowMessageCount += 1;
-      document.getElementById('zoomdatarate').innerHTML ="Zoom: total " + round(sumZoomTimes/zoomMessageCount,2) + " window " +round(sumZoomWindowTimes/zoomWindowMessageCount, 2);
+      document.getElementById('zoomdatarate').innerHTML ="Zoom: total " + (sumZoomTimes/zoomMessageCount).toPrecision(4) + " window " + (sumZoomWindowTimes/zoomWindowMessageCount).toPrecision(4);
   
       if (proposedZoom != currentZoom) 
       {
