@@ -979,7 +979,7 @@ var handleWebSocketMessage = function (event) {
                  // if (zoomLayers[currentZoom]['pannable']) map.panBy(pixelsPerGravitron*jsonData.vector.x, pixelsPerGravitron*jsonData.vector.y);
     //if (pannable) {
       //pannable = false;
-      map.panBy(pixelsPerGravitron*jsonData.vector.x, pixelsPerGravitron*jsonData.vector.y);
+      //map.panBy(pixelsPerGravitron*jsonData.vector.x, pixelsPerGravitron*jsonData.vector.y);
     //}
                   //paintTarget();
   } 

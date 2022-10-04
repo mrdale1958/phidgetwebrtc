@@ -49,6 +49,7 @@ class SpinGestureProcessor(GestureProcessor):
                     'id': self.requestCount }
             self.requestCount += 1
             return True
+        print("Failed to get spin data", self.sensor.spinHistory.size())
         return False
 
 
