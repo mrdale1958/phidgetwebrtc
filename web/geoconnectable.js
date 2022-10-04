@@ -670,24 +670,24 @@ function setInstructions(texta, textb)
    document.getElementById(featureKey + "_img").classList.remove('open');
  }
 
- function doZoom(newLayer)
+ function doZoom(newLevel)
  {
 
   // could get optimized to not unload a feture we know we are about to load
-  console.log("doZoom " + newLayer);
-  if (newLayer == lastZoom) return;
-  if (newLayer < 0) newLayer = 0;
+  console.log("doZoom " + newLevel);
+  if (newLevel == lastZoom) return;
+  if (newLevel < 0) newLevel = 3;
   //if (newLayer >= Object.keys(zoomLayers).length) newLayer = Object.keys(zoomLayers).length - 1;
-  currentZoom = newLayer;
+  currentZoom = newLevel;
   //console.log("leaving layer " + lastZoom + " at " + map.getCenter());
     // map.setZoom(Math.min(maxZoom,Math.max(minZoom,zoomLayers[newLayer]['mapZoom'])));
     //map.setZoom(Math.min(maxZoom,Math.max(minZoom,newLayer)));
     //if (zoomable) {
     //  zoomable = false;
-      map.setZoom(newLayer);
+      map.setZoom(newLevel);
         //lastZoom = map.getZoom();
-      lastZoom = newLayer;
-      console.log("entered layer " + newLayer + " at " + map.getCenter()), Date.now();
+      lastZoom = newLevel;
+      console.log("entered layer " + newLevel + " at " + map.getCenter()), Date.now();
       //paintTarget();
     //}
     return;
@@ -809,6 +809,7 @@ function initializemap() {
     
 
     map.addListener('center_changed', function() {
+      console.log("release for panning", map.getCenter(), Date.now());
       pannable = true;
      });
 
@@ -962,7 +963,8 @@ var handleWebSocketMessage = function (event) {
     //var dampingZoom = map.getZoom()*minZoom/maxZoom;
     if (jsonData.vector.x == 0.0 && jsonData.vector.y == 0.0) return;  
     //console.log("sensor message: " + jsonData.type + "-" + jsonData.vector.x + "," +jsonData.vector.y);
-    document.getElementById('accelerometer').innerHTML = jsonData.vector.x.toFixed(4) + "," +jsonData.vector.y.toFixed(4);
+    document.getElementById('accelerometer').innerHTML = round(jsonData.vector.x,4) + "," +
+                                                        round(jsonData.vector.y,4);
     let now = Date.now();
     let elapsedTime = now - lastTiltMessageTime;
     lastTiltMessageTime = now;
@@ -974,13 +976,14 @@ var handleWebSocketMessage = function (event) {
     }
     sumTiltWindowTimes += elapsedTime;
     tiltWindowMessageCount += 1;
-    document.getElementById('tiltdatarate').innerHTML = "Tilt total " + (sumTiltTimes/tiltMessageCount).toFixed(2) + 
-                  " window " + (sumTiltWindowTimes/tiltWindowMessageCount).toFixed(2);
-                 // if (zoomLayers[currentZoom]['pannable']) map.panBy(pixelsPerGravitron*jsonData.vector.x, pixelsPerGravitron*jsonData.vector.y);
-    //if (pannable) {
-      //pannable = false;
-      //map.panBy(pixelsPerGravitron*jsonData.vector.x, pixelsPerGravitron*jsonData.vector.y);
-    //}
+    document.getElementById('tiltdatarate').innerHTML = "Tilt total " + round(sumTiltTimes/tiltMessageCount,2) + 
+                  " window " + round(sumTiltWindowTimes/tiltWindowMessageCount,2);
+    restartIdleTimer();
+                  // if (zoomLayers[currentZoom]['pannable']) map.panBy(pixelsPerGravitron*jsonData.vector.x, pixelsPerGravitron*jsonData.vector.y);
+    if (pannable) {
+      pannable = false;
+      map.panBy(pixelsPerGravitron*jsonData.vector.x, pixelsPerGravitron*jsonData.vector.y);
+    }
                   //paintTarget();
   } 
   else if (jsonData.gesture == 'zoom') 

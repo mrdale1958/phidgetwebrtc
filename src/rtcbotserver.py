@@ -170,7 +170,7 @@ async def tilt():
                     logger.debug('sending spin data: %s', "client went away=%s" % outbound_message, extra=d)
                     break
             #await websocket.send(json.dumps(now))
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.008)
     except  Exception: #websockets.exceptions.ConnectionResetError:
         d = {'clientip': local_ip_address, 'user': 'pi', }
         #logger.info('Websocket connection reset: %s', "tilt server %s port %d path %s" % (websocket.remote_address[0], websocket.remote_address[1], path), extra=d)

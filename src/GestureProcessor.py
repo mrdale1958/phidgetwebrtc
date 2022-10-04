@@ -61,7 +61,10 @@ class TiltGestureProcessor(GestureProcessor):
 
     def getTilt(self):
         retval = False
-        if self.sensor.components[0].size() and self.sensor.components[1].size():
+        if self.sensor.components[0].size() and \
+            self.sensor.components[1].size() and \
+            self.sensor.lastDataReceived > self.sensor.lastDataSent:
+            self.sensor.lastDataSent = time.time()
             newXtilt = sum(self.sensor.components[0].items) / self.sensor.components[0].size()
             if (abs(newXtilt) > self.config['tiltThreshold']):
                 #if (abs(newXtilt-self.Xtilt) > 0.01):
