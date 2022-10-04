@@ -3,7 +3,7 @@ from Queue import Queue
 from Phidget22.Devices.Accelerometer import *
 import logging
 from Phidget22.PhidgetException import *
-import datetime
+import time
 import json as JSON
 
 
@@ -20,6 +20,8 @@ class TiltData:
                  position=0):
         TiltData._all.add(self)
         self.config = config
+        self.lastDataReceived = 0
+        self.lastDataSent = 0
         self.gestureProcessor = TiltGestureProcessor(self, config)
         self.queueLength = config['accelerometerQueueLength']
         self.components = [ Queue(self.queueLength),
@@ -87,6 +89,7 @@ class TiltData:
             newX = self.config['flipX'] * (sensorData.Acceleration[0] - self.zeros[0])
             newY = self.config['flipY'] * (sensorData.Acceleration[1] - self.zeros[1])
         newZ = sensorData.Acceleration[2] - self.zeros[2]
+        self.lastDataReceived = time.time()
         self.populateQueues(round(newX, 3), round(newY,3), round(newZ,3))
         #print(newX, newY)
         
