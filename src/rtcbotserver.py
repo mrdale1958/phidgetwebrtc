@@ -24,7 +24,7 @@ parser.add_argument('--port', '-p',
                    help='set a tcp port for the server (default: 5678)')
 parser.add_argument('--loglevel', nargs=1,
                     choices=['info', 'warning', 'debug', 'error', 'critical'],
-                    default=['info'],
+                    default=['debug'],
                    help='set a log level for the server (default: warning; options: info, warning, debug, error, critical)') 
 parser.add_argument('--logfilename', 
                     default='/var/log/tilty/server.log',
@@ -39,15 +39,15 @@ parser.add_argument('--encoderQueueLength',
                     help='queue length for averaging spin data')
 parser.add_argument('--tiltSampleRate', 
                     type=float, dest='tiltSampleRate',
-                    default=0.1,
-                    help='delay (in seconds?) to wait between sending message sets')
+                    default=100,
+                    help='delay (in milliseconds) to wait between sending message sets')
 parser.add_argument('--tiltThreshold', 
                     type=float, dest='tiltThreshold',
-                    default=0.002,
-                    help='minimum accelerometer deflection from 0 to register as tilt')
+                    default=0.004,
+                    help='minimum accelerometer deflection from 0 to register as changed')
 parser.add_argument('--swapXY', 
                     type=int, dest='swapXY',
-                    default=0,
+                    default=1,
                     help='change the logic of tilt to deal with mounting orientation')
 parser.add_argument('--flipX', 
                     type=int, dest='flipX',
@@ -122,8 +122,8 @@ testgp = None # TestHarnessGestureProcessor(None, config)
 # For this example, we use just one global connection
 running = False
 print("setting up RTC")
-conn = RTCConnection()
-@conn.onReady
+webRTC = RTCConnection()
+@webRTC.onReady
 def readyCallback():
     print("RTC Ready!")
     
@@ -141,8 +141,8 @@ async def tilt():
                 logger.debug('sending test data: %s', "testgp next action=%s" % outbound_message, extra=d)
                 try:
                     #await websocket.send(outbound_message)
-                    conn.web.json_response(outbound_message)
-                    conn.put_nowait(outbound_message)
+                    webRTC.web.json_response(outbound_message)
+                    webRTC.put_nowait(outbound_message)
                 except Exception: #websockets.exceptions.ConnectionClosed:
                     d = {'clientip': local_ip_address, 'user': 'pi' }
                     logger.info('sending test data: %s', "client went away=%s" % outbound_message, extra=d)
@@ -153,7 +153,7 @@ async def tilt():
                 logger.debug('sending tilt data: %s', "tilt nextAction=%s" % outbound_message, extra=d)
                 try:
                     #await websocket.send(outbound_message)
-                    conn.put_nowait(outbound_message)
+                    webRTC.put_nowait(outbound_message)
                 except Exception: #websockets.exceptions.ConnectionClosed:
                     d = {'clientip': local_ip_address, 'user': 'pi' }
                     logger.debug('sending tilt data: %s', "client went away=%s" % outbound_message, extra=d)
@@ -164,13 +164,13 @@ async def tilt():
                 logger.debug('sending spin data: %s', "spin gp nextAction=%s" % outbound_message, extra=d)
                 try:
                     #await websocket.send(outbound_message)
-                    conn.put_nowait(outbound_message)
+                    webRTC.put_nowait(outbound_message)
                 except Exception: #websockets.exceptions.ConnectionClosed:
                     d = {'clientip': local_ip_address, 'user': 'pi' }
                     logger.debug('sending spin data: %s', "client went away=%s" % outbound_message, extra=d)
                     break
             #await websocket.send(json.dumps(now))
-            await asyncio.sleep(config['tiltSampleRate'])
+            await asyncio.sleep(0.1)
     except  Exception: #websockets.exceptions.ConnectionResetError:
         d = {'clientip': local_ip_address, 'user': 'pi', }
         #logger.info('Websocket connection reset: %s', "tilt server %s port %d path %s" % (websocket.remote_address[0], websocket.remote_address[1], path), extra=d)
@@ -190,14 +190,14 @@ async def tilt():
   
  
 
-@conn.subscribe
+@webRTC.subscribe
 def onMessage(msg):  # Called when messages received from browser
     global running
     print("Got message:", msg)
     if not running:
         print("starting tilt process")
         running = True
-        conn.put_nowait({"data": "pong"})
+        webRTC.put_nowait({"data": "pong"})
         print(asyncio.all_tasks())
         asyncio.ensure_future(tilt())
         #asyncio.get_event_loop().run_forever()
@@ -232,7 +232,7 @@ async def rtcbotjs(request):
 @routes.post("/connect")
 async def connect(request):
     clientOffer = await request.json()
-    serverResponse = await conn.getLocalDescription(clientOffer)
+    serverResponse = await webRTC.getLocalDescription(clientOffer)
     return web.json_response(serverResponse)
 
 
@@ -251,7 +251,7 @@ async def index(request):
             <script src="/rtcbot.js"></script>
         </head>
         <body>
-            
+
             <script>
                 var rtcConnection = new rtcbot.RTCConnection();
 
@@ -284,17 +284,36 @@ async def index(request):
       <button name="connectlocal" onclick="connectLocal()">connect local</button>
       <button name="connectpi" onclick="connectPi()">connect pi</button>
       <button name="disconnectws" onclick="disconnectWS()">disconnect WS</button>
+    </div>
+    <div id='dashboard'>
+      <div class='number' id='tiltdatarate'></div>
+      <div class='number' id='zoomdatarate'></div>
+      <div id='zoomer'>
+        <div class='number' id='rotation'></div>
+        <div id='EncoderID'></div>
+        <div id='EncoderIndex'></div>
+        <div id='EncoderDelta'></div>
+        <div id='EncoderElapsedTime'></div>
+        <div id='EncoderPosition'></div>
       </div>
+      <div id='tilter'>
+        <div class='numberpair' id='accelerometer'></div>
+        <div id='TiltsensorID'></div>
+        <div id='TiltX'></div>
+        <div id='TiltY'></div>
+        <div id='TiltMagnitude'></div>
+      </div>
+    </div>
     <div id="map-canvas"></div>
     <div id="map-mask"><img src="mask.png" width="1080" height="1080"/> </div>
-   <script src="geoconnectable.js"></script>
+    <script src="geoconnectable.js"></script>
     <script> function initialize()
     {
       // ugly scope hack
       initializemap();
     }
     </script>
-    <script src="https://maps.googleapis.com/maps/api/js?v=3&key=AIzaSyD2YKbGfu2sbJl0ap0NnHQiZhBrNvrpKX8&callback=initialize"
+    <script src="https://maps.googleapis.com/maps/api/js?v=beta&key=AIzaSyD2YKbGfu2sbJl0ap0NnHQiZhBrNvrpKX8&callback=initialize"
     async defer></script>
    <div id="container" style="position: absolute;top: 0px;left: 422px;">
       <div id="circletext">
@@ -388,25 +407,7 @@ async def index(request):
       <img src="cedulas/Tilty 17.png" id="site17_img">
       <div class="site_name">La Central (Los Mochis)</div>
     </div>  
-    <div id='dashboard'>
-      <div class='number' id='tiltdatarate'></div>
-      <div class='number' id='spindatarate'></div>
-      <div id='zoomer'>
-        <div class='number' id='rotation'></div>
-        <div id='EncoderID'></div>
-        <div id='EncoderIndex'></div>
-        <div id='EncoderDelta'></div>
-        <div id='EncoderElapsedTime'></div>
-        <div id='EncoderPosition'></div>
-      </div>
-      <div id='tilter'>
-        <div class='numberpair' id='accelerometer'></div>
-        <div id='TiltsensorID'></div>
-        <div id='TiltX'></div>
-        <div id='TiltY'></div>
-        <div id='TiltMagnitude'></div>
-      </div>
-    </div>
+   
 <ul id="messages"></ul>  
         </body>
     </html>

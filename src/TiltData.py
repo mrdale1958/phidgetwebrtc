@@ -69,6 +69,7 @@ class TiltData:
                             Queue(self.queueLength) ]
         
     def populateQueues(self, newX, newY, newZ):
+        #print("populate queues", newX, newY, self.components[0].size(), self.variances[0].size())
         self.variances[0].enqueue(newX - self.components[0].head())
         self.variances[1].enqueue(newY - self.components[1].head())
         self.variances[2].enqueue(newZ - self.components[2].head())
@@ -86,7 +87,7 @@ class TiltData:
             newX = self.config['flipX'] * (sensorData.Acceleration[0] - self.zeros[0])
             newY = self.config['flipY'] * (sensorData.Acceleration[1] - self.zeros[1])
         newZ = sensorData.Acceleration[2] - self.zeros[2]
-        self.populateQueues(newX, newY, newZ)
+        self.populateQueues(round(newX, 3), round(newY,3), round(newZ,3))
         #print(newX, newY)
         
      
@@ -98,13 +99,13 @@ class TiltData:
                 else:
                     self.setZeros(sensorData[0],sensorData[1],sensorData[2])
         if (self.config['swapXY'] == 1) :
-            newY = self.config['flipY'] * (sensorData[0] - self.zeros[0])
-            newX = self.config['flipX'] * (sensorData[1] - self.zeros[1])
+            newY = self.config['flipY'] * (sensorData[0] - self.zeros[1])
+            newX = self.config['flipX'] * (sensorData[1] - self.zeros[0])
         else: 
             newX = self.config['flipX'] * (sensorData[0] - self.zeros[0])
             newY = self.config['flipY'] * (sensorData[1] - self.zeros[1])
         newZ = sensorData [2] - self.zeros[2]
-        self.populateQueues(newX, newY, newZ)
+        self.populateQueues(round(newX, 3), round(newY,3), round(newZ,3))
         #print(self.config['swapXY'],sensorData, newX, newY)
 
 
@@ -122,6 +123,8 @@ class TiltData:
         attached = e
         for tilter in TiltData._all:
             tilter.serialNumber = attached.getDeviceSerialNumber()
+            attached.setDataRate(tilter.config['tiltSampleRate'])
+            attached.setAccelerationChangeTrigger(tilter.config['tiltThreshold'])
         
         d = {'clientip': "tilter", 'user':"_accelerometerAttached", 'foo': "accelerometer attached"}
         TiltData._logger.info('accelerometer Attached! %s', 'yay', extra=d)
