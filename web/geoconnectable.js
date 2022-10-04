@@ -674,7 +674,7 @@ function setInstructions(texta, textb)
  {
 
   // could get optimized to not unload a feture we know we are about to load
-  console.log("doZoom " + newLevel);
+  //console.log("doZoom " + newLevel);
   if (newLevel == lastZoom) return;
   if (newLevel < 0) newLevel = 3;
   //if (newLayer >= Object.keys(zoomLayers).length) newLayer = Object.keys(zoomLayers).length - 1;
@@ -682,14 +682,14 @@ function setInstructions(texta, textb)
   //console.log("leaving layer " + lastZoom + " at " + map.getCenter());
     // map.setZoom(Math.min(maxZoom,Math.max(minZoom,zoomLayers[newLayer]['mapZoom'])));
     //map.setZoom(Math.min(maxZoom,Math.max(minZoom,newLayer)));
-    //if (zoomable) {
-    //  zoomable = false;
+    if (zoomable) {
+      zoomable = false;
       map.setZoom(newLevel);
         //lastZoom = map.getZoom();
       lastZoom = newLevel;
-      console.log("entered layer " + newLevel + " at " + map.getCenter()), Date.now();
+      //console.log("entered layer " + newLevel + " at " + map.getCenter()), Date.now();
       //paintTarget();
-    //}
+    }
     return;
 
   }  
@@ -782,7 +782,7 @@ function initializemap() {
 
     map.addListener('zoom_changed', function()
     {
-      console.log("got new zoom", map.getZoom(), Date.now());
+      //console.log("got new zoom", map.getZoom(), Date.now());
       zoomable = true;
       //doZoom(map.getZoom());
       //map.data.forEach(function (feature) { map.data.remove(feature);});
@@ -936,7 +936,7 @@ function zoomOut()
 }
 
 var handleWebRTCMessage = function (message) {
-  console.log("handleWebRTCMessage", message);
+  //console.log("handleWebRTCMessage", message);
   let payload = {};
   payload.data = message;
 
@@ -990,7 +990,7 @@ var handleWebSocketMessage = function (event) {
     {
 
       currentSpinPosition += jsonData.vector.delta;
-      console.log("current spin position", currentSpinPosition, minZoom + currentSpinPosition/clicksPerZoomLevel, Date.now());
+      //console.log("current spin position", currentSpinPosition, minZoom + currentSpinPosition/clicksPerZoomLevel, Date.now());
       //console.log("sensor message: " + jsonData.gesture + " " + jsonData.vector.delta + "; currentSpinPosition=" +currentSpinPosition);
       if (currentSpinPosition < 0) currentSpinPosition = 0;
       var proposedZoom =  minZoom + currentSpinPosition/clicksPerZoomLevel; //Math.floor(currentSpinPosition/clicksPerZoomLevel);
@@ -1007,7 +1007,7 @@ var handleWebSocketMessage = function (event) {
       }
       sumZoomWindowTimes += elapsedTime;
       zoomWindowMessageCount += 1;
-      document.getElementById('zoomdatarate').innerHTML ="Zoom: total " + sumZoomTimes/zoomMessageCount + " window " + sumZoomWindowTimes/zoomWindowMessageCount;
+      document.getElementById('zoomdatarate').innerHTML ="Zoom: total " + round(sumZoomTimes/zoomMessageCount,2) + " window " +round(sumZoomWindowTimes/zoomWindowMessageCount, 2);
   
       if (proposedZoom != currentZoom) 
       {
