@@ -1,0 +1,310 @@
+#buttons {
+  display: none;
+}
+#iw_bodyContent {
+    background-color: #b0c4de;
+}
+html, body{
+     height: 100%;
+   margin: 0px;
+    padding: 0px;
+     background-color: black;
+}
+#map-canvas {
+    height: 1080px;
+    width : 1080px;
+    margin-left: 420px;
+    background-color: black;
+}
+#map-mask {
+   position:fixed;
+    top: 0px;
+    left:420px;
+    pointer-events: none;
+
+}
+.instructions {
+    border-color: red;
+    border-width: 2px;
+   position:fixed;
+    top: 400px;
+    left:820px;
+    
+}
+
+imgnot{
+  
+    -webkit-transition: 3s;
+    -moz-transition: 3s;
+    -ms-transition: 3s;
+    -o-transition: 3s;
+    transition: 3s; 
+    margin-left: 0px;
+    margin-top: 0px;   
+    width: 0px;
+    height: 0px;
+  }
+
+img.open {
+    -webkit-transition: 3s;
+    -moz-transition: 3s;
+    -ms-transition: 3s;
+    -o-transition: 3s;
+    transition: 3s; 
+    width: 828px;
+    height: 762px;
+    margin-left: -284px;
+    margin-top: -221px;
+}
+
+img.fixedmask {
+    -webkit-transition: 3s;
+    -moz-transition: 3s;
+    -ms-transition: 3s;
+    -o-transition: 3s;
+    transition: 3s; 
+    width: 1080px;
+    height: 1080px;
+    margin-left: 0px;
+    margin-top: 0px;
+}
+
+.instructions .spanish {
+    
+}
+.instructions .english {
+    font-style:italic;
+    
+}
+.overview {
+    border-color: blue;
+     border-width: 2px;
+  position:fixed;
+    top: 400px;
+    left:820px;
+}
+.overview .spanish {
+    
+}
+.overview .english {
+    font-style:italic;
+    
+}
+.state {
+    border-color: green;
+    border-width: 2px;
+   position:fixed;
+    top: 400px;
+    left:820px;
+}
+.state .site_name {
+    font-weight: bold;
+    display: none;
+    
+}
+.state .spanish {
+    
+}
+.state .english {
+     font-style:italic;
+   
+}
+.county {
+   position:fixed;
+    top: 400px;
+    left:820px;
+    border-color: magenta;
+    border-width: 2px;
+}
+.county .site_name {
+    display: none;
+}
+.county .spanish {
+    
+}
+.county .english {
+     font-style:italic;
+   
+}
+.city {
+   position:fixed;
+    top: 400px;
+    left:820px;
+    border-color: yellow;
+    border-width: 2px;
+}
+.city .site_name {
+    display: none;
+}
+.city .spanish {
+    
+}
+.city .english {
+     font-style:italic;
+   
+}
+
+img.imageOff {
+    -webkit-transition: all 3s ease;
+    -moz-transition: all 3s ease;
+    -ms-transition: all 3s ease;
+    -o-transition: all 3s ease;
+    transition: all 3s ease; 
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width:0;
+    height:auto;
+
+    display: block;
+    margin: auto;
+}
+img.imageOn {
+position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width:auto;
+    height:auto;
+
+    display: block;
+    margin: auto; }
+
+
+#site1 {
+    display:none;
+}
+#site2 {
+    display:none;
+}
+#site3 {
+    display:none;
+}
+#site4 {
+    display:none;
+}
+#site5 {
+    display:none;
+}
+#site6 {
+    display:none;
+}
+#site7 {
+    display:none;
+}
+#site8 {
+    display:none;
+}
+#site9 {
+    display:none;
+}
+#site10 {
+    display:none;
+}
+#site11 {
+    display:none;
+}
+#site12 {
+    display:none;
+}
+#site13 {
+    display:none;
+}
+#site14 {
+    display:none;
+}
+#site15 {
+    display:none;
+}
+#site16 {
+    display:none;
+}
+#site17 {
+    display:none;
+}
+#site18 {
+    display:none;
+}
+#site19 {
+    display:none;
+}
+#site20 {
+    display:none;
+}
+#site21 {
+    display:none;
+}
+#site22 {
+    display:none;
+}
+#site23 {
+    display:none;
+}
+#site24 {
+    display:none;
+}
+#site25 {
+    display:none;
+}
+#site26 {
+    display:none;
+}
+#site27 {
+    display:none;
+}
+
+#container { }
+
+#circle { position: relative;  overflow: hidden; pointer-events:none;}
+
+#circle text { font-family: 'Helvetica Neue', Arial; font-size: 18px; font-weight: bold; }
+
+#circle svg { position: fixed; left: 420px; top: 0; width: 1080px; height: 1080px; }
+#circlespinning svg { position: fixed; left: 0; top: 0; width: 100%; height: 100%;
+
+  -webkit-animation-name: rotate;
+     -moz-animation-name: rotate;
+      -ms-animation-name: rotate;
+       -o-animation-name: rotate;
+          animation-name: rotate;
+  -webkit-animation-duration: 5s;
+     -moz-animation-duration: 5s;
+      -ms-animation-duration: 5s;
+       -o-animation-duration: 5s;
+          animation-duration: 5s;
+  -webkit-animation-iteration-count: infinite;
+     -moz-animation-iteration-count: infinite;
+      -ms-animation-iteration-count: infinite;
+       -o-animation-iteration-count: infinite;
+          animation-iteration-count: infinite;
+  -webkit-animation-timing-function: linear;
+     -moz-animation-timing-function: linear;
+      -ms-animation-timing-function: linear;
+       -o-animation-timing-function: linear;
+          animation-timing-function: linear;
+
+}
+
+@-webkit-keyframes rotate {
+    from { -webkit-transform: rotate(360deg); }
+    to { -webkit-transform: rotate(0); }
+}
+@-moz-keyframes rotate {
+    from { -moz-transform: rotate(360deg); }
+    to { -moz-transform: rotate(0); }
+}
+@-ms-keyframes rotate {
+    from { -ms-transform: rotate(360deg); }
+    to { -ms-transform: rotate(0); }
+}
+@-o-keyframes rotate {
+    from { -o-transform: rotate(360deg); }
+    to { -o-transform: rotate(0); }
+}
+@keyframes rotate {
+    from { transform: rotate(360deg); }
+    to { transform: rotate(0); }
+} 
