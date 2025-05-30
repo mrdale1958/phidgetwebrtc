@@ -132,3 +132,4 @@ dmypy.json
 # APple noise
 .DS_Store
 */.DS_Store
+src/static/maps_api_key.js
