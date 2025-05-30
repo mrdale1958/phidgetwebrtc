@@ -48,6 +48,8 @@ var ignoreKeys = [
 
 var hotspot = {}; // Holds Google Maps Marker objects for hotspots
 var lastZoom = -1;
+var currentFeatureSet = {}; // <-- Add this line
+
 
 // --- SVG-based instruction rendering ---
 function setInstructions(texta, textb) {
@@ -292,6 +294,7 @@ function initializemap(WebRTConnection) {
       disableDefaultUI: true,
       backgroundColor: '#000000',
       mapTypeId: google.maps.MapTypeId.HYBRID,
+      mapId: '742e3d713d326414c8d039bd',
     };
     map = new google.maps.Map(mapCanvas, mapOptions);
     map.data.setStyle({
@@ -320,11 +323,17 @@ function initializemap(WebRTConnection) {
     // });
 
     // With this:
+    // Example for main marker
+    var img = document.createElement('img');
+    img.src = logoimage.url; // logoimage should be a URL string
+    img.alt = 'Marker';
+    img.style.width = '32px'; // or your preferred size
+
     var marker = new AdvancedMarkerElement({
       map: map,
       position: myLatLng,
       title: 'Click to zoom',
-      content: logoimage // If logoimage is an HTMLElement, otherwise use icon property
+      content: img // If logoimage is an HTMLElement, otherwise use icon property
     });
 
     // For hotspot markers, update similarly:
@@ -333,16 +342,21 @@ function initializemap(WebRTConnection) {
       if (hotspotDiv === null) continue;
       var iconImage;
       if (hotspotDiv.hasAttribute("icon")) {
-        iconImage = Object.assign({}, defaultIconImage);
-        iconImage.url = hotspotDiv.getAttribute("icon");
-        // AdvancedMarkerElement uses 'content' for custom HTML, or 'icon' for image URL
+        iconImage = hotspotDiv.getAttribute("icon"); // This should be a URL string
       }
       var loc = new google.maps.LatLng(hotspots[hotspotkey][0], hotspots[hotspotkey][1]);
+      var contentNode;
+      if (iconImage) {
+        contentNode = document.createElement('img');
+        contentNode.src = iconImage;
+        contentNode.alt = hotspotkey;
+        contentNode.style.width = '32px';
+      }
       hotspot[hotspotkey] = new AdvancedMarkerElement({
         map: map,
         position: loc,
         title: hotspotkey,
-        content: iconImage ? iconImage.url : undefined // or use 'icon' if you want a simple image
+        content: contentNode // Only pass if contentNode is defined
       });
     }
 
@@ -372,7 +386,7 @@ function initializemap(WebRTConnection) {
       map.data.overrideStyle(event.feature, {strokeWeight: 8});
     });
 
-    marker.addListener('click', function() {
+    marker.addListener('gmp-click', function() {
       map.setZoom(8);
       map.setCenter(marker.getPosition());
     });  
@@ -497,6 +511,7 @@ var handleWebSocketMessage = function (event) {
   if (! map) return;
   currView = map.getBounds();
   if (currView === undefined) return;
+  if (!currentFeatureSet) return;
   
   currRight = currView.getNorthEast().lng();
   currLeft = currView.getSouthWest().lng();

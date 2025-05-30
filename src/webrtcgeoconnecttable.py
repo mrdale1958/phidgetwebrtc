@@ -175,7 +175,7 @@ except RuntimeError as e:
 # Function to handle encoder position change events
 def onEncoderPositionChange(device, positionChange, timeChange, indexTriggered):
     position = positionChange
-    print(f"Encoder Position: {position}")
+    #print(f"Encoder Position: {position}")
     action = { 'gesture': 'zoom',
                     'vector': {
                         'delta': positionChange
@@ -268,10 +268,16 @@ async def rtcbotjs(request):
 # This sets up the connection
 @routes.post("/connect")
 async def connect(request):
+    global conn
     clientOffer = await request.json()
-    serverResponse = await conn.getLocalDescription(clientOffer)
-    return web.json_response(serverResponse)
-
+    # Ensure conn exists and is open
+    try:
+        if conn is None or getattr(conn._rtc, "connectionState", None) == "closed":
+            conn = RTCConnection()
+        serverResponse = await conn.getLocalDescription(clientOffer)
+        return web.json_response(serverResponse)
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
 
 @routes.get("/")
 async def index(request):
