@@ -240,14 +240,16 @@ class OptimizedSatelliteDetector {
 }
 
 // Usage Example
-const detector = new OptimizedSatelliteDetector(map, {
+/**
+ * const detector = new OptimizedSatelliteDetector(map, {
   debounceDelay: 500,           // Wait 500ms after movement stops
   integerZoomOnly: true,        // Only check on integer zoom levels
   panThreshold: 0.001,          // Minimum pan distance (in degrees)
   maxCallsPerSecond: 3          // Maximum API calls per second
 });
+* 
 
 map.addListener('satellite_data_limit', (event) => {
   console.log('High resolution satellite data no longer available');
   // Disable further zoom in, show warning, etc.
-});
+});**/

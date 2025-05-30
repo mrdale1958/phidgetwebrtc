@@ -97,16 +97,36 @@
        
     <script src="maps_api_key.js"></script>
     <script  >    
-        if (window.GOOGLE_MAPS_API_KEY) {
-            var script = document.createElement('script');
-            script.src = "https://maps.googleapis.com/maps/api/js?key=" + window.GOOGLE_MAPS_API_KEY + "&v=3.exp&use_slippy=true";
-            document.head.appendChild(script);
-        } else {
-            console.error("Google Maps API key not found!");
+        function loadSLPScripts() {
+            var detectorScript = document.createElement('script');
+            detectorScript.src = "OptimizedDataDetector.js";
+            detectorScript.onload = function() {
+                var configScript = document.createElement('script');
+                configScript.src = "SLPConfig.js";
+                configScript.onload = function() {
+                    var slpScript = document.createElement('script');
+                    slpScript.src = "SLP.js";
+                    slpScript.onload = function() {
+                        initializemap(conn);
+                    };
+                    document.head.appendChild(slpScript);
+                };
+                document.head.appendChild(configScript);
+            };
+            document.head.appendChild(detectorScript);
         }
+
+    if (window.GOOGLE_MAPS_API_KEY) {
+        var script = document.createElement('script');
+        script.src = "https://maps.googleapis.com/maps/api/js?key=" + window.GOOGLE_MAPS_API_KEY + "&v=3.exp&use_slippy=true&libraries=marker&callback=loadSLPScripts&loading=async";
+        script.async = true;
+        script.defer = true;
+        document.head.appendChild(script);
+    } else {
+        console.error("Google Maps API key not found!");
+    }
     </script>
-    <script src="SLPConfig.js"></script>
-    <script src="SLP.js"></script>
+
     <div id="container" style="position: absolute;top: 0px;left: 422px;">
         <div id="circletext"></div>
     </div>
@@ -123,7 +143,7 @@
     </p>
     <ul id="messages"></ul>  
     <script>
-        initializemap(conn);
+        
     </script>
 </body>
 </html>

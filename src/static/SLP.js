@@ -299,33 +299,50 @@ function initializemap(WebRTConnection) {
       strokeWeight: 1
     });
     featuresets = {} ;
-
+    window.detector = new OptimizedSatelliteDetector(map, {
+      debounceDelay: 500,
+      integerZoomOnly: true,
+      panThreshold: 0.001,
+      maxCallsPerSecond: 3
+    });
+    
+    
     // Create main marker and all hotspot markers
-    var marker = new google.maps.Marker({
-      position: myLatLng,
+     // Example for creating a marker with the new API:
+    const { AdvancedMarkerElement } = google.maps.marker;
+
+    // Replace this:
+    // var marker = new google.maps.Marker({
+    //   position: myLatLng,
+    //   map: map,
+    //   title: 'Click to zoom',
+    //   icon: logoimage,
+    // });
+
+    // With this:
+    var marker = new AdvancedMarkerElement({
       map: map,
+      position: myLatLng,
       title: 'Click to zoom',
-      icon: logoimage,
+      content: logoimage // If logoimage is an HTMLElement, otherwise use icon property
     });
 
+    // For hotspot markers, update similarly:
     for (hotspotkey in hotspots) {
       var hotspotDiv = document.getElementById(hotspotkey);
       if (hotspotDiv === null) continue;
       var iconImage;
       if (hotspotDiv.hasAttribute("icon")) {
         iconImage = Object.assign({}, defaultIconImage);
-        iconImage.url=hotspotDiv.getAttribute("icon");
-        if (hotspotDiv.hasAttribute("labelOffset")) {
-          var offsetJSON = hotspotDiv.getAttribute("labelOffset");
-          var offsetData = JSON.parse(offsetJSON);
-          iconImage.labelOffset = new google.maps.Point(offsetData.x, offsetData.y);
-        }
+        iconImage.url = hotspotDiv.getAttribute("icon");
+        // AdvancedMarkerElement uses 'content' for custom HTML, or 'icon' for image URL
       }
-      var loc =  new google.maps.LatLng(hotspots[hotspotkey][0],hotspots[hotspotkey][1]);
-      hotspot[hotspotkey] = new google.maps.Marker({
+      var loc = new google.maps.LatLng(hotspots[hotspotkey][0], hotspots[hotspotkey][1]);
+      hotspot[hotspotkey] = new AdvancedMarkerElement({
+        map: map,
         position: loc,
-        label: makeLabel(hotspotkey),
-        icon: iconImage,
+        title: hotspotkey,
+        content: iconImage ? iconImage.url : undefined // or use 'icon' if you want a simple image
       });
     }
 
@@ -363,14 +380,7 @@ function initializemap(WebRTConnection) {
     targetRectangle =  new google.maps.Rectangle();
     doZoom(0);
 
-    // --- OptimizedSatelliteDetector integration ---
-    window.detector = new OptimizedSatelliteDetector(map, {
-      debounceDelay: 500,
-      integerZoomOnly: true,
-      panThreshold: 0.001,
-      maxCallsPerSecond: 3
-    });
-
+  
     map.addListener('satellite_data_limit', (event) => {
       console.log('High resolution satellite data no longer available');
       allowZoomIn = false;
