@@ -11,6 +11,7 @@ import json as JSON
 from aiohttp import web
 from rtcbot import RTCConnection, getRTCBotJS
 from Phidget22.Devices.Accelerometer import Accelerometer
+from Phidget22.Devices.Spatial import Spatial
 from Phidget22.Devices.Encoder import Encoder
 from Phidget22.PhidgetException import PhidgetException
 from GestureProcessor import TiltGestureProcessor, SpinGestureProcessor
@@ -90,9 +91,11 @@ class TiltData:
         self.variances =  [ Queue(config['accelerometerQueueLength']), Queue(config['accelerometerQueueLength']), Queue(config['accelerometerQueueLength']) ]
         self.magnitude = 0.0
         self.zeros = [ 0.0, 0.0, 0.0 ]
-
+        
         self.serialNumber = ''
-
+    def acceleration(self):
+        return [self.components[0].head(), self.components[1].head(), self.components[2].head()]
+        
     def setZeros(self,x0,y0,z0):
         self.zeros = [ x0, y0, z0 ]
 
@@ -102,6 +105,7 @@ class TiltData:
     def ingestSpatialData(self, sensorData):
         if self.components[0].qsize() == 0:
             self.setZeros(sensorData[0],sensorData[1],sensorData[2])
+            print("new zero tilt",sensorData[0],sensorData[1],sensorData[2])
         newX = config['flipX'] * (sensorData[0] - self.zeros[0])
         newY = config['flipY'] * (sensorData[1] - self.zeros[1])
         newZ = sensorData[2] - self.zeros[2]
@@ -115,9 +119,10 @@ class TiltData:
     def ingestAccelerometerData(self, index, sensorData):
         if self.components[index].qsize() == 0:
             self.setAccelerometerZero(index,sensorData)
-        newX = sensorData - self.zeros[index]
-        self.variances[index].enqueue(newX - self.components[index].head())
-        self.components[index].enqueue(newX)
+            print("new zero tilt",index,sensorData)
+        newVector = sensorData - self.zeros[index]
+        self.variances[index].enqueue(newVector - self.components[index].head())
+        self.components[index].enqueue(newVector)
  
 
                       
@@ -161,21 +166,69 @@ except RuntimeError as e:
     print("Exiting....")
     # exit(1)
 
-#Create an accelerometer object
-try:
-#    spatial = Spatial()
-    accelerometer = Accelerometer()
-    tiltdata = TiltData()
+# Handler for when a Spatial device is attached
+def SpatialAttached(device):
+    print(f"Spatial device attached: {device.getDeviceSerialNumber()}")
 
-except RuntimeError as e:
-    print("Runtime Exception: %s" % e)
-    print("Exiting....")
-    exit(1)
+# Handler for when a Spatial device is detached
+def SpatialDetached(device):
+    print(f"Spatial device detached: {device.getDeviceSerialNumber()}")
+
+# Handler for errors from a Spatial device
+def SpatialError(device, errorCode, errorString):
+    print(f"Spatial device error: {errorCode} - {errorString}")
+
+# Handler for spatial data from a Spatial device
+def SpatialData(device, spatialData, timestamp):
+    #print(f"Spatial data received: {spatialData}")
+    tiltdata.ingestSpatialData(spatialData[0].acceleration)
+
+# Handler for accelerometer data (different signature than SpatialDataHandler)
+def AccelerometerData(device, acceleration, timestamp):
+    #print(f"Accelerometer data received: {acceleration}")
+    tiltdata.ingestAccelerometerData(0, acceleration[0])
+    tiltdata.ingestAccelerometerData(1, acceleration[1])
+    tiltdata.ingestAccelerometerData(2, acceleration[2])
+
+# Attempt to set up the tilter object
+tiltdata = TiltData()
+try:
+        # Try to attach a Accelerometer device
+
+    accelerometer = Accelerometer()
+    accelerometer.setOnAttachHandler(SpatialAttached)
+    accelerometer.setOnDetachHandler(SpatialDetached)
+    accelerometer.setOnErrorHandler(SpatialError)
+    accelerometer.setOnAccelerationChangeHandler(AccelerometerData)
+    accelerometer.openWaitForAttachment(5000)
+    tilter = accelerometer
+    tiltdata.serialNumber = accelerometer.getDeviceSerialNumber()
+    print(f"Accelerometer device attached with serial number: {tiltdata.serialNumber}")
+
+except PhidgetException as e:
+    print(f"Failed to attach Spatial device: {e.details}")
+    print("Falling back to Accelerometer device...")
+    try:
+        # If Accelerometer fails, fall back to Spatial
+        spatial = Spatial()
+        spatial.setOnAttachHandler(SpatialAttached)
+        spatial.setOnDetachHandler(SpatialDetached)
+        spatial.setOnErrorHandler(SpatialError)
+        spatial.setOnSpatialDataHandler(SpatialData)
+        spatial.openWaitForAttachment(5000)
+        tilter = spatial
+        #tiltdata = TiltData()
+        tiltdata.serialNumber = spatial.getDeviceSerialNumber()
+        print(f"Spatial device attached with serial number: {tiltdata.serialNumber}")
+    except PhidgetException as e:
+        print(f"Failed to attach Spatial device: {e.details}")
+        print("Exiting...")
+        exit(1)
 
 # Function to handle encoder position change events
 def onEncoderPositionChange(device, positionChange, timeChange, indexTriggered):
     position = positionChange
-    print(f"Encoder Position: {position}")
+    # print(f"Encoder Position: {position}")
     action = { 'gesture': 'zoom',
                     'vector': {
                         'delta': positionChange
@@ -188,76 +241,36 @@ def onEncoderPositionChange(device, positionChange, timeChange, indexTriggered):
 
 # Attach the encoder position change event handler
 spinner.setOnPositionChangeHandler(onEncoderPositionChange)
-
-# Initialize the Phidget accelerometer
-tilter = Accelerometer()
-def SpatialAttached(e):
-    attached = e
-    tiltdata.serialNumber = attached.getDeviceSerialNumber()
-
-    print("Spatial %i Attached!" % (attached.getDeviceSerialNumber()))
-
-def SpatialDetached(e):
-    detached = e
-    print("Spatial %i Detached!" % (detached.getDeviceSerialNumber()))
-
-def SpatialError(e):
-    try:
-        source = e
-        print("Spatial %i: Phidget Error %i: %s" % (source.getDeviceSerialNumber(), e.eCode, e.description))
-    except PhidgetException as e:
-        print("Phidget Exception %i: %s" % (e.code, e.details))
-def SpatialData(device, acceleration, timestamp):
-    source = device
-    if tiltdata.serialNumber == source.getDeviceSerialNumber():
-        if tiltdata:
-            tiltdata.ingestSpatialData(acceleration)
-        # for index, spatialData in enumerate(e.spatialData):
-        #     print("=== Data Set: %i ===" % (index))
-        #     if len(spatialData.Acceleration) > 0:
-        #         print("Acceleration> x: %6f  y: %6f  z: %6f" % (spatialData.Acceleration[0], spatialData.Acceleration[1], spatialData.Acceleration[2]))
-        #     if len(spatialData.AngularRate) > 0:
-        #         print("Angular Rate> x: %6f  y: %6f  z: %6f" % (spatialData.AngularRate[0], spatialData.AngularRate[1], spatialData.AngularRate[2]))
-        #     if len(spatialData.MagneticField) > 0:
-        #         print("Magnetic Field> x: %6f  y: %6f  z: %6f" % (spatialData.MagneticField[0], spatialData.MagneticField[1], spatialData.MagneticField[2]))
-        #     print("Time Span> Seconds Elapsed: %i  microseconds since last packet: %i" % (spatialData.Timestamp.seconds, spatialData.Timestamp.microSeconds))
-        
-        # print("------------------------------------------")
-    else:
-        print("wrong device: expected-", tiltdata.serialNumber, "got-", source.getDeviceSerialNumber())
-
-try:
-    #logging example, uncomment to generate a log file
-    #spatial.enableLogging(PhidgetLogLevel.PHIDGET_LOG_VERBOSE, "phidgetlog.log")
-
-
-    tilter.setOnAttachHandler(SpatialAttached)
-    tilter.setOnDetachHandler(SpatialDetached)
-    tilter.setOnErrorHandler(SpatialError)
-    tilter.setOnAccelerationChangeHandler(SpatialData)
-except PhidgetException as e:
-    print("Phidget Exception %i: %s" % (e.code, e.details))
-    print("Exiting....")
-    tilter = None
-
+spinner.openWaitForAttachment(5000)
 
 conn = RTCConnection()  # For this example, we use just one global connection
 
 @conn.subscribe
 def onMessage(msg):  # Called when messages received from browser
-    print("Got message:", msg["data"])
+    #print("Got message:", msg["data"])
     conn.put_nowait({"data": "pong"})
 
 # Function to read accelerometer data and send it via WebRTC
 async def send_accelerometer_data():
     while True:
-        acceleration = tilter.getAcceleration()
-        data = action = { 'gesture': 'pan',
-                  'vector': { 'x': acceleration[0], 'y': acceleration[1]}
-                        }
-        
+        acceleration = tiltdata.acceleration()
+        # Check if all accelerometer readings are below the threshold
+        if (abs(acceleration[0]) < config['tiltThreshold'] and
+            abs(acceleration[1]) < config['tiltThreshold']):
+            # ending zeros if below threshold
+            acceleration[0] = 0.0
+            acceleration[1] = 0.0
+
+        # Prepare and send data 
+        data = {
+            'gesture': 'pan',
+            'vector': {
+                'x': acceleration[0] ,
+                'y': acceleration[1]
+            }
+        }
         conn.put_nowait(data)
-        await asyncio.sleep(0.1)  # Adjust the frequency as needed
+        await asyncio.sleep(config['tiltSampleRate'])  # Adjust the frequency as needed
 
 # Serve the RTCBot javascript library at /rtcbot.js
 @routes.get("/rtcbot.js")
@@ -268,10 +281,25 @@ async def rtcbotjs(request):
 # This sets up the connection
 @routes.post("/connect")
 async def connect(request):
+    global conn
+    print("connect", request)
     clientOffer = await request.json()
-    serverResponse = await conn.getLocalDescription(clientOffer)
-    return web.json_response(serverResponse)
-
+    try:
+        # Check if the underlying peer connection is closed
+        if hasattr(conn, "pc") and getattr(conn, "pc", None):
+            if getattr(conn.pc, "connectionState", None) == "closed":
+                print("PeerConnection is closed, recreating...")
+                conn = RTCConnection()
+                # Re-subscribe the message handler
+                @conn.subscribe
+                def onMessage(msg):
+                    print("Got message:", msg["data"])
+                    conn.put_nowait({"data": "pong"})
+        serverResponse = await conn.getLocalDescription(clientOffer)
+        return web.json_response(serverResponse)
+    except Exception as e:
+        print(f"Error in /connect: {e}")
+        return web.json_response({"error": str(e)}, status=500)
 
 @routes.get("/")
 async def index(request):
@@ -298,18 +326,17 @@ async def svgjs(request):
     file_path = os.path.join(os.path.dirname(__file__), 'static', 'svg.js')
     return web.FileResponse(file_path)
     
-
+# Cleanup on shutdown
 async def cleanup(app=None):
-    await conn.close()
+    if conn:
+        await conn.close()
+    print("WebRTC connection closed.")
+
+
 
 app = web.Application()
 app.add_routes(routes)
 # Start the accelerometer data sending loop
-tilter.openWaitForAttachment(5000)
-tiltdata.serialNumber = tilter.getDeviceSerialNumber()
-
-spinner.openWaitForAttachment(5000)
-# Create and set the event loop
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 loop.create_task(send_accelerometer_data())
