@@ -11,27 +11,77 @@
     <script>
         var conn = new rtcbot.RTCConnection();
 
-        //conn.subscribe(m => {
-            //console.log("Received from python:", m)});
+         async function connect() {
 
-        async function connect() {
-            let offer = await conn.getLocalDescription();
+            if (conn && conn.isOpen) {
+                console.log(" WebRTC already connected...");
+                //conn.close();
+            } else {
+                let offer = await conn.getLocalDescription();
 
-            // POST the information to /connect
-            let response = await fetch("/connect", {
-                method: "POST",
-                cache: "no-cache",
-                body: JSON.stringify(offer)
-            });
+                // POST the information to /connect
+                let response = await fetch("/connect", {
+                    method: "POST",
+                    cache: "no-cache",
+                    body: JSON.stringify(offer)
+                });
 
-            await conn.setRemoteDescription(await response.json());
+                let answer = await response.json();
 
-            console.log("Ready!");
+                if (answer.error) {
+                    console.error("WebRTC connection error from server:", answer.error);
+                    alert("WebRTC connection failed: " + answer.error);
+                    return;
+                }
+
+                await conn.setRemoteDescription(answer);
+
+                console.log("Ready!");
+            }
         }
         connect();
+
+ // Function to disconnect WebRTC on page unload
+        async function disconnectRTC() {
+            if (conn && conn.isOpen) { // Check if the connection exists and is open
+                console.log("Disconnecting WebRTC...");
+                await conn.close();
+            } else {
+                console.log("No active WebRTC connection to disconnect.");
+            }
+        }
+
+        // Attach the disconnectRTC function to the window's unload event
+        window.onunload = disconnectRTC;
+        
+        // Function to toggle full-screen mode
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // Force full-screen mode on page load
+        async function forceFullScreen() {
+            try {
+                await document.documentElement.requestFullscreen();
+                console.log("Full-screen mode enabled.");
+            } catch (err) {
+                //alert("Full-screen mode is required for this application. Please enable it manually.");
+                console.error(`Failed to enable full-screen mode: ${err.message}`);
+            }
+        }
+
+        // Call forceFullScreen when the page loads
+        //window.onload =         initializemap(conn);
+
     </script>
 </head>
-<body style="text-align: center;padding-top: 30px;">
+<body style="text-align: center;padding-top: 0px;">
     <div id='buttons'>
         <button name="zoomin" onclick="zoomIn()">Zoom in</button>
         <button name="zoomout" onclick="zoomOut()">Zoom out</button>
@@ -39,26 +89,23 @@
         <button name="connectlocal" onclick="connectLocal()">connect local</button>
         <button name="connectpi" onclick="connectPi()">connect pi</button>
         <button name="disconnectws" onclick="disconnectWS()">disconnect WS</button>
-        </div>
-      <div id="map-canvas"></div>
-      <div id="map-mask"><img src="mask.png" width="1080" height="1080"/> </div>
+        <br />
+        <button name="fullscreen" onclick="toggleFullScreen()">Toggle Fullscreen</button>
+    </div>
+    <div id="map-canvas"></div>
+    <div id="map-mask"><img src="mask.png" width="1080" height="1080"/> </div>
        
-      </script>
-      <script src="https://maps.googleapis.com/maps/api/js?&key=AIzaSyD2YKbGfu2sbJl0ap0NnHQiZhBrNvrpKX8&v=3.exp&use_slippy=true"
-      ></script>
-      <script src="SLPConfig.js"></script>
-      <script src="SLP.js"></script>
-      <div id="container" style="position: absolute;top: 0px;left: 422px;">
-        <div id="circletext">
-        </div>
-      </div>
+    <script src="https://maps.googleapis.com/maps/api/js?&key=AIzaSyD2YKbGfu2sbJl0ap0NnHQiZhBrNvrpKX8&v=3.exp&use_slippy=true"></script>
+    <script src="SLPConfig.js"></script>
+    <script src="SLP.js"></script>
+    <div id="container" style="position: absolute;top: 0px;left: 422px;">
+        <div id="circletext"></div>
+    </div>
    
-      <div class="instructions">
-        <div class="spanish">
-        </div>
-        <div class="english">
-        </div>
-      </div> 
+    <div class="instructions">
+        <div class="spanish"></div>
+        <div class="english"></div>
+    </div> 
    
     <h1>Click the Button</h1>
     <button type="button" id="mybutton">Click me!</button>
