@@ -251,20 +251,17 @@ def onMessage(msg):  # Called when messages received from browser
 # Function to read accelerometer data and send it via WebRTC
 async def send_accelerometer_data():
     while True:
-        acceleration = tilter.getAcceleration()
-        print("Acceleration:", acceleration)
-        if abs(acceleration[0]) < config['tiltThreshold'] and abs(acceleration[1]) < config['tiltThreshold']:
-            print("No significant tilt detected, skipping...")
+        gesture_data = tiltdata.gestureProcessor.getTilt()
+        if gesture_data is None:
             await asyncio.sleep(0.1)
             continue
-        # should be doing this but currently just spitting out raw data
-        # tiltdata.ingestSpatialData(acceleration)        
-        data = action = { 'gesture': 'pan',
-                  'vector': { 'x': acceleration[0], 'y': acceleration[1]}
-                        }
-        
-        conn.put_nowait(data)
+
+        # Example: gesture_data = {'gesture': 'pan', 'vector': {'x': ..., 'y': ...}}
+        # You may want to filter out small gestures here, depending on your processor's logic
+
+        conn.put_nowait(gesture_data)
         await asyncio.sleep(0.1)  # Adjust the frequency as needed
+
 
 # Serve the RTCBot javascript library at /rtcbot.js
 @routes.get("/rtcbot.js")
