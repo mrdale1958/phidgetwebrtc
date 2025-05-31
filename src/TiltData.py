@@ -1,5 +1,5 @@
 from GestureProcessor import TiltGestureProcessor, TestHarnessGestureProcessor
-from Queue import Queue
+from GestureQueue import Queue
 from Phidget22.Devices.Accelerometer import *
 import logging
 from Phidget22.PhidgetException import *

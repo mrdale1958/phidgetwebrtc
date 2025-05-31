@@ -252,6 +252,7 @@ def onMessage(msg):  # Called when messages received from browser
 async def send_accelerometer_data():
     while True:
         gesture_data = tiltdata.gestureProcessor.getTilt()
+        print("Gesture Data:", gesture_data)
         if gesture_data is None:
             await asyncio.sleep(0.1)
             continue
