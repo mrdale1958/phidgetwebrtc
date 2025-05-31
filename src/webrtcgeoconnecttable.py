@@ -158,7 +158,7 @@ spinHistory = Queue()
 
 #Create an encoder object
 try:
-    spinner = Encoder()
+    #spinner = Encoder()
     spindata = SpinData(config=config)
 except RuntimeError as e:
     print("Runtime spinner Exception: %s" % e)
@@ -168,7 +168,7 @@ except RuntimeError as e:
 #Create an accelerometer object
 try:
 #    spatial = Spatial()
-    accelerometer = Accelerometer()
+    #accelerometer = Accelerometer()
     tiltdata = TiltData(config=config)
 
 except RuntimeError as e:
@@ -191,10 +191,10 @@ def onEncoderPositionChange(device, positionChange, timeChange, indexTriggered):
     conn.put_nowait(action)
 
 # Attach the encoder position change event handler
-spinner.setOnPositionChangeHandler(onEncoderPositionChange)
+#spinner.setOnPositionChangeHandler(onEncoderPositionChange)
 
 # Initialize the Phidget accelerometer
-tilter = Accelerometer()
+#tilter = Accelerometer()
 def SpatialAttached(e):
     attached = e
     tiltdata.serialNumber = attached.getDeviceSerialNumber()
@@ -230,19 +230,19 @@ def SpatialData(device, acceleration, timestamp):
     else:
         print("wrong device: expected-", tiltdata.serialNumber, "got-", source.getDeviceSerialNumber())
 
-try:
+#try:
     #logging example, uncomment to generate a log file
     #spatial.enableLogging(PhidgetLogLevel.PHIDGET_LOG_VERBOSE, "phidgetlog.log")
 
 
-    tilter.setOnAttachHandler(SpatialAttached)
-    tilter.setOnDetachHandler(SpatialDetached)
-    tilter.setOnErrorHandler(SpatialError)
-    tilter.setOnAccelerationChangeHandler(SpatialData)
-except PhidgetException as e:
-    print("Phidget Exception %i: %s" % (e.code, e.details))
-    print("Exiting....")
-    tilter = None
+    #tilter.setOnAttachHandler(SpatialAttached)
+    #tilter.setOnDetachHandler(SpatialDetached)
+    #tilter.setOnErrorHandler(SpatialError)
+    #tilter.setOnAccelerationChangeHandler(SpatialData)
+#except PhidgetException as e:
+    #print("Phidget Exception %i: %s" % (e.code, e.details))
+    #print("Exiting....")
+    #tilter = None
 
 
 conn = RTCConnection()  # For this example, we use just one global connection
@@ -332,10 +332,10 @@ async def cleanup(app=None):
 app = web.Application()
 app.add_routes(routes)
 # Start the accelerometer data sending loop
-tilter.openWaitForAttachment(5000)
+#tilter.openWaitForAttachment(5000)
 tiltdata.serialNumber = tilter.getDeviceSerialNumber()
 
-spinner.openWaitForAttachment(5000)
+#spinner.openWaitForAttachment(5000)
 # Create and set the event loop
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
