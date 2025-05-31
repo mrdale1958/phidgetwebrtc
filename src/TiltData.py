@@ -1,5 +1,5 @@
 from GestureProcessor import TiltGestureProcessor, TestHarnessGestureProcessor
-from GestureQueue import Queue
+from GestureQueue import GestureQueue
 from Phidget22.Devices.Accelerometer import *
 import logging
 from Phidget22.PhidgetException import *
@@ -24,12 +24,12 @@ class TiltData:
         self.lastDataSent = 0
         self.gestureProcessor = TiltGestureProcessor(self, config)
         self.queueLength = config['accelerometerQueueLength']
-        self.components = [ Queue(self.queueLength),
-                            Queue(self.queueLength),
-                            Queue(self.queueLength) ]
-        self.variances =  [ Queue(self.queueLength),
-                            Queue(self.queueLength),
-                            Queue(self.queueLength) ]
+        self.components = [ GestureQueue(self.queueLength),
+                            GestureQueue(self.queueLength),
+                            GestureQueue(self.queueLength) ]
+        self.variances =  [ GestureQueue(self.queueLength),
+                            GestureQueue(self.queueLength),
+                            GestureQueue(self.queueLength) ]
         self.magnitude = 0.0
         self.zeros = [ 0.0, 0.0, 0.0 ]
         self.serialNumber = ''
@@ -63,12 +63,12 @@ class TiltData:
         self.zeros[index] = newZero
 
     def level_table(self):
-        self.components = [ Queue(self.queueLength),
-                            Queue(self.queueLength),
-                            Queue(self.queueLength) ]
-        self.variances =  [ Queue(self.queueLength),
-                            Queue(self.queueLength),
-                            Queue(self.queueLength) ]
+        self.components = [ GestureQueue(self.queueLength),
+                            GestureQueue(self.queueLength),
+                            GestureQueue(self.queueLength) ]
+        self.variances =  [ GestureQueue(self.queueLength),
+                            GestureQueue(self.queueLength),
+                            GestureQueue(self.queueLength) ]
         
     def populateQueues(self, newX, newY, newZ):
         #print("populate queues", newX, newY, self.components[0].size(), self.variances[0].size())

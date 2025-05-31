@@ -1,4 +1,4 @@
-class Queue:
+class GestureQueue:
     def __init__(self, maxLength=10):
         self.items = []
         self.maxLength = maxLength

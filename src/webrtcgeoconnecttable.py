@@ -10,6 +10,7 @@ import asyncio
 import json as JSON
 from aiohttp import web
 from rtcbot import RTCConnection, getRTCBotJS
+
 from Phidget22.Devices.Accelerometer import Accelerometer
 from Phidget22.Devices.Encoder import Encoder
 from Phidget22.PhidgetException import PhidgetException
@@ -30,12 +31,15 @@ config = {
     'spinHistoryLength':10,
     'accelerometerQueueLength':10,
     'encoderQueueLength':10,
-    'tiltSampleRate' : 0.1,
+    'tiltSampleRate' : 10.0,
     'tiltThreshold' : 0.002,
     'flipX' : 1,
     'flipY' : -1,
     'flipZ' : -1,
+    'swapXY' : 0,
 }
+from SpinData import SpinData
+from TiltData import TiltData
 tilter = None
 class Queue:
     """ A simple Queue mechanism to store the last N values of a sensor stream """
@@ -68,7 +72,7 @@ class Queue:
     def qsize(self):
         return len(self.items)
 
-class SpinData:
+class oldSpinData:
     def __init__(self, positionChange=0, elapsedtime=0.0, position=0):
         self.gestureProcessor = SpinGestureProcessor(self, config)
         self.position = position
@@ -82,7 +86,7 @@ class SpinData:
         self.elapsedTime = time
         self.spinHistory.enqueue( positionChange * config['flipZ'])
 
-class TiltData:
+class oldTiltData:
 
     def __init__(self):
         self.gestureProcessor = TiltGestureProcessor(self, config)
@@ -155,7 +159,7 @@ spinHistory = Queue()
 #Create an encoder object
 try:
     spinner = Encoder()
-    spindata = SpinData()
+    spindata = SpinData(config=config)
 except RuntimeError as e:
     print("Runtime spinner Exception: %s" % e)
     print("Exiting....")
@@ -165,7 +169,7 @@ except RuntimeError as e:
 try:
 #    spatial = Spatial()
     accelerometer = Accelerometer()
-    tiltdata = TiltData()
+    tiltdata = TiltData(config=config)
 
 except RuntimeError as e:
     print("Runtime Exception: %s" % e)

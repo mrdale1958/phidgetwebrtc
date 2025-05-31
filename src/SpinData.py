@@ -1,5 +1,5 @@
 from GestureProcessor import SpinGestureProcessor, TestHarnessGestureProcessor
-from Queue import Queue
+from GestureQueue import GestureQueue
 from Phidget22.Devices.Encoder import *
 import logging
 from Phidget22.PhidgetException import *
@@ -24,7 +24,7 @@ class SpinData:
         self.delta = positionChange
         self.timestamp = datetime.time()
         self.elapsedTime = elapsedtime
-        self.spinHistory = Queue(config['encoderQueueLength'])
+        self.spinHistory = GestureQueue(config['encoderQueueLength'])
         
         if (SpinData._logger == None):
             SpinData._logger = logging.getLogger('spinsensorserver')
