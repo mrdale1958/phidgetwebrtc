@@ -660,10 +660,10 @@ var defaultIconImage = {
 
 var mexicoCenter = new google.maps.LatLng(23.43348438907877, -103.05326881250002);
 //var laberinto = new google.maps.LatLng(22.118239, -100.998443);
-var laberinto = new google.maps.LatLng(21.440732,-100.570744);
-var myLatLng = laberinto;
+var clark = new google.maps.LatLng(40.7667, -111.9034);
+var myLatLng = clark;
 var logoimage = {
-  url: "laberinto_logo.png",
+  url: "clarklogo.png",
   origin: new google.maps.Point(0, 0),
       // The anchor for this image is the base of the flagpole at (0, 32).
   anchor: new google.maps.Point(0, 16)

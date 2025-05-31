@@ -252,6 +252,13 @@ def onMessage(msg):  # Called when messages received from browser
 async def send_accelerometer_data():
     while True:
         acceleration = tilter.getAcceleration()
+        print("Acceleration:", acceleration)
+        if abs(acceleration[0]) < config['tiltThreshold'] and abs(acceleration[1]) < config['tiltThreshold']:
+            print("No significant tilt detected, skipping...")
+            await asyncio.sleep(0.1)
+            continue
+        # should be doing this but currently just spitting out raw data
+        # tiltdata.ingestSpatialData(acceleration)        
         data = action = { 'gesture': 'pan',
                   'vector': { 'x': acceleration[0], 'y': acceleration[1]}
                         }
@@ -302,6 +309,10 @@ async def OptimizedDataDetector(request):
 @routes.get("/maps_api_key.js")
 async def maps_api_key(request):
     file_path = os.path.join(os.path.dirname(__file__), 'static', 'maps_api_key.js')
+    return web.FileResponse(file_path)
+@routes.get("/clarklogo.png")
+async def clarklogo(request):
+    file_path = os.path.join(os.path.dirname(__file__), 'static', 'clarklogo.png')
     return web.FileResponse(file_path)
 @routes.get("/mask.png")
 async def maskpng(request):
