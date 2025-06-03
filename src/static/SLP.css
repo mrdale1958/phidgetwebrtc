@@ -15,6 +15,8 @@ html, body{
     width : 1080px;
     margin-left: 420px;
     background-color: black;
+    top: 0px;
+    position: fixed;
 }
 #map-mask {
    position:fixed;

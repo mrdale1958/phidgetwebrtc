@@ -14,6 +14,7 @@ from Phidget22.Devices.Accelerometer import Accelerometer
 from Phidget22.Devices.Encoder import Encoder
 from Phidget22.PhidgetException import PhidgetException
 from GestureProcessor import TiltGestureProcessor, SpinGestureProcessor
+import time
 
 
 __author__ = 'Dale MacDonald'
@@ -31,7 +32,7 @@ config = {
     'accelerometerQueueLength':10,
     'encoderQueueLength':10,
     'tiltSampleRate' : 0.1,
-    'tiltThreshold' : 0.002,
+    'tiltThreshold' : 0.012,
     'flipX' : 1,
     'flipY' : -1,
     'flipZ' : -1,
@@ -90,7 +91,8 @@ class TiltData:
         self.variances =  [ Queue(config['accelerometerQueueLength']), Queue(config['accelerometerQueueLength']), Queue(config['accelerometerQueueLength']) ]
         self.magnitude = 0.0
         self.zeros = [ 0.0, 0.0, 0.0 ]
-
+        self.lastDataReceived = 0
+        self.lastDataSent = 0
         self.serialNumber = ''
 
     def setZeros(self,x0,y0,z0):
@@ -98,6 +100,34 @@ class TiltData:
 
     def setAccelerometerZero(self, index, newZero):
         self.zeros[index] = newZero
+        
+    def getTilt(self):
+        retval = False
+        if self.components[0].qsize() and \
+            self.components[1].qsize() and \
+            self.lastDataReceived > self.lastDataSent:
+            self.lastDataSent = time.time()
+            newXtilt = sum(self.components[0].items) / self.components[0].qsize()
+            if (abs(newXtilt) > config['tiltThreshold']):
+                #if (abs(newXtilt-self.Xtilt) > 0.01):
+                self.Xtilt = newXtilt
+                retval = True
+            else:
+                print("Xtilt too small", newXtilt)
+                self.Xtilt = 0.0
+            newYtilt = sum(self.components[1].items) / self.components[1].qsize()
+            if (abs(newYtilt) > config['tiltThreshold']):
+                #if (abs(newYtilt-self.Ytilt) > 0.01):
+                self.Ytilt = newYtilt
+                retval = True
+            else:
+                print("Ytilt too small", newYtilt)
+                self.Ytilt = 0.0
+            # claculate the current tilt vector and put in self.Xtilt,self.Ytilt if not flat return true else false
+            #print(self.sensor.components[0].items,self.sensor.components[1].items)
+            return retval
+        print("too soon", self.lastDataReceived - self.lastDataSent, self.lastDataReceived, self.lastDataSent)
+        return retval
 
     def ingestSpatialData(self, sensorData):
         if self.components[0].qsize() == 0:
@@ -111,7 +141,9 @@ class TiltData:
         self.components[0].enqueue(newX)
         self.components[1].enqueue(newY)
         self.components[2].enqueue(newZ) 
-     
+        self.lastDataReceived = time.time()
+        print("new tilt data", newX, newY, sensorData, self.zeros)
+    
     def ingestAccelerometerData(self, index, sensorData):
         if self.components[index].qsize() == 0:
             self.setAccelerometerZero(index,sensorData)
@@ -122,15 +154,13 @@ class TiltData:
 
                       
     def getJSON(self):
-        jsonBundle = { 'type':        'tilt',
-                    'packet': { 'sensorID':  '',
-                    'tiltX': 0.0,
-                    'tiltY': 0.0
-                    }
-                   }
+        jsonBundle = { 'gesture': 'pan',
+                  'vector': { 'x': self.Xtilt, 'y': self.Ytilt }
+                        }
                     
     
-        return(JSON.dumps(jsonBundle))
+        #return(JSON.dumps(jsonBundle))
+        return(jsonBundle)
     
 #class SpinVector:
 
@@ -175,7 +205,7 @@ except RuntimeError as e:
 # Function to handle encoder position change events
 def onEncoderPositionChange(device, positionChange, timeChange, indexTriggered):
     position = positionChange
-    print(f"Encoder Position: {position}")
+    #print(f"Encoder Position: {position}")
     action = { 'gesture': 'zoom',
                     'vector': {
                         'delta': positionChange
@@ -208,6 +238,7 @@ def SpatialError(e):
     except PhidgetException as e:
         print("Phidget Exception %i: %s" % (e.code, e.details))
 def SpatialData(device, acceleration, timestamp):
+    #print("spatialData", acceleration)
     source = device
     if tiltdata.serialNumber == source.getDeviceSerialNumber():
         if tiltdata:
@@ -251,12 +282,11 @@ def onMessage(msg):  # Called when messages received from browser
 # Function to read accelerometer data and send it via WebRTC
 async def send_accelerometer_data():
     while True:
-        acceleration = tilter.getAcceleration()
-        data = action = { 'gesture': 'pan',
-                  'vector': { 'x': acceleration[0], 'y': acceleration[1]}
-                        }
-        
-        conn.put_nowait(data)
+        #acceleration = tilter.getAcceleration()
+        if (tiltdata.getTilt()):
+            data = action = tiltdata.getJSON()
+            print(data)
+            conn.put_nowait(data)
         await asyncio.sleep(0.1)  # Adjust the frequency as needed
 
 # Serve the RTCBot javascript library at /rtcbot.js
@@ -268,10 +298,16 @@ async def rtcbotjs(request):
 # This sets up the connection
 @routes.post("/connect")
 async def connect(request):
+    global conn
     clientOffer = await request.json()
-    serverResponse = await conn.getLocalDescription(clientOffer)
-    return web.json_response(serverResponse)
-
+    
+    try:
+        if conn is None or getattr(conn._rtc, "connectionState", None) == "closed":
+            conn = RTCConnection()
+        serverResponse = await conn.getLocalDescription(clientOffer)
+        return web.json_response(serverResponse)
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
 
 @routes.get("/")
 async def index(request):
@@ -289,6 +325,18 @@ async def slpjs(request):
 async def slpconfig(request):
     file_path = os.path.join(os.path.dirname(__file__), 'static', 'SLPConfig.js')
     return web.FileResponse(file_path)
+@routes.get("/OptimizedDataDetector.js")
+async def OptimizedDataDetector(request):
+    file_path = os.path.join(os.path.dirname(__file__), 'static', 'OptimizedDataDetector.js')
+    return web.FileResponse(file_path)
+@routes.get("/maps_api_key.js")
+async def maps_api_key(request):
+    file_path = os.path.join(os.path.dirname(__file__), 'static', 'maps_api_key.js')
+    return web.FileResponse(file_path)
+@routes.get("/clarklogo.png")
+async def clarklogo(request):
+    file_path = os.path.join(os.path.dirname(__file__), 'static', 'clarklogo.png')
+    return web.FileResponse(file_path)
 @routes.get("/mask.png")
 async def maskpng(request):
     file_path = os.path.join(os.path.dirname(__file__), 'static', 'mask.png')
@@ -300,8 +348,10 @@ async def svgjs(request):
     
 
 async def cleanup(app=None):
-    await conn.close()
-
+    result = conn.close()
+    if asyncio.iscoroutine(result):
+        await result
+        
 app = web.Application()
 app.add_routes(routes)
 # Start the accelerometer data sending loop
@@ -310,10 +360,27 @@ tiltdata.serialNumber = tilter.getDeviceSerialNumber()
 
 spinner.openWaitForAttachment(5000)
 # Create and set the event loop
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-loop.create_task(send_accelerometer_data())
-app.on_shutdown.append(cleanup)
+#loop = asyncio.new_event_loop()
+#asyncio.set_event_loop(loop)
+#loop.create_task(send_accelerometer_data())
+#app.on_shutdown.append(cleanup)
 
 # Run the app
-loop.run_until_complete(web._run_app(app, port=8080))
+#loop.run_until_complete(web._run_app(app, port=8080))
+
+#app.on_shutdown.append(cleanup)
+
+async def start_background_tasks(app):
+    app['accel_task'] = asyncio.create_task(send_accelerometer_data())
+
+async def cleanup_background_tasks(app):
+    app['accel_task'].cancel()
+    try:
+        await app['accel_task']
+    except asyncio.CancelledError:
+        pass
+
+app.on_startup.append(start_background_tasks)
+app.on_cleanup.append(cleanup_background_tasks)
+
+web.run_app(app, port=8080)

@@ -1,6 +1,6 @@
 /* instruction texts that appear at different levels of zoom */
-var defaultSpinInstruction = "Rotar en el sentido de las manecillas del reloj para acercar la imagen";
-var defaultTiltInstruction = "Inclinar hacia abajo y arriba para movere hacia el Norte";
+var defaultSpinInstruction = "Rotate the table to make the map bigger or smaller";
+var defaultTiltInstruction = "Gently rock the table like a seesaw to see different parts of the map";
 var huntForHotSpotTiltInstruction = "tilt to hunt for hotspot";
 var huntForHotSpotSpinInstruction = "spin clockwise to view hotspot";
 var spinInToSeeCards= "spin clockwise to learn about this site";
@@ -632,8 +632,8 @@ var targetWidth = 0.03; // portion of visible map
 var maxZoom = 25;
 var minZoom = 3;
 
-var panScaler = 0.02;
-var clicksPerRev =  256; // weirdly not 3.14159 * 4 *
+var panScaler = 0.3;
+var clicksPerRev =  1024; // weirdly not 3.14159 * 4 *
 var revsPerFullZoom = (maxZoom - minZoom)/8;
 var clicksPerZoomLevel =  clicksPerRev / revsPerFullZoom;
 var maxClicks = clicksPerRev * revsPerFullZoom * 1.0;
@@ -660,10 +660,10 @@ var defaultIconImage = {
 
 var mexicoCenter = new google.maps.LatLng(23.43348438907877, -103.05326881250002);
 //var laberinto = new google.maps.LatLng(22.118239, -100.998443);
-var laberinto = new google.maps.LatLng(21.440732,-100.570744);
-var myLatLng = laberinto;
+var clark = new google.maps.LatLng(40.7667, -111.9034);
+var myLatLng = clark;
 var logoimage = {
-  url: "laberinto_logo.png",
+  url: "clarklogo.png",
   origin: new google.maps.Point(0, 0),
       // The anchor for this image is the base of the flagpole at (0, 32).
   anchor: new google.maps.Point(0, 16)
