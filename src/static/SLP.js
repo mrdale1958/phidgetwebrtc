@@ -50,6 +50,8 @@ var hotspot = {}; // Holds Google Maps Marker objects for hotspots
 var lastZoom = -1;
 var currentFeatureSet = {}; // <-- Add this line
 
+let cumulativeTicks = 0; // Add at the top-level (if not already present)
+let maxTicksAtLocation = maxClicks; // Will be set by MaxZoomService
 
 // --- SVG-based instruction rendering ---
 function setInstructions(texta, textb) {
@@ -152,6 +154,10 @@ function doZoom(newLayer) {
   if (newLayer === lastZoom) return;
   if (newLayer < 0) newLayer = 0;
   if (newLayer >= Object.keys(zoomLayers).length) newLayer = Object.keys(zoomLayers).length - 1;
+  if (!zoomLayers[newLayer]) {
+    console.warn("zoomLayers[" + newLayer + "] is undefined");
+    return;
+  }
   currentZoom = newLayer;
   console.log("leaving layer " + lastZoom + " at " + map.getCenter());
   if (lastZoom === -1) {
@@ -302,12 +308,12 @@ function initializemap(WebRTConnection) {
       strokeWeight: 1
     });
     featuresets = {} ;
-    window.detector = new OptimizedSatelliteDetector(map, {
+    /* window.detector = new OptimizedSatelliteDetector(map, {
       debounceDelay: 500,
       integerZoomOnly: true,
       panThreshold: 0.001,
       maxCallsPerSecond: 3
-    });
+    }); */
     
     
     // Create main marker and all hotspot markers
@@ -371,7 +377,7 @@ function initializemap(WebRTConnection) {
     });
 
     map.addListener('zoom_changed', function() {
-      console.log("got new zoom", map.getZoom(), zoomLayers[currentZoom]);
+      //console.log("got new zoom", map.getZoom(), zoomLayers[currentZoom]);
     });
 
     // Load GeoJson features
@@ -394,8 +400,11 @@ function initializemap(WebRTConnection) {
     targetRectangle =  new google.maps.Rectangle();
     doZoom(0);
 
+    // --- Run pan analysis as soon as the map is loaded ---
+    triggerPanAnalysisIfNeeded(map.getCenter());
+
   
-    map.addListener('satellite_data_limit', (event) => {
+   /*  map.addListener('satellite_data_limit', (event) => {
       console.log('High resolution satellite data no longer available');
       allowZoomIn = false;
       // Optionally show a warning to the user
@@ -407,8 +416,8 @@ function initializemap(WebRTConnection) {
       if (quality >= detector.qualityThreshold) {
         allowZoomIn = true;
       }
-    });
-  }
+    });*/
+  } 
 
   // Subscribe to WebRTC messages
   try {
@@ -506,8 +515,52 @@ function zoomOut() {
   handleWebSocketMessage(dummyEvent);
 }
 
+function updateMaxTicksAtLocation(latLng) {
+  const maxZoomService = new google.maps.MaxZoomService();
+  maxZoomService.getMaxZoomAtLatLng(latLng, function(response) {
+    if (response.status === google.maps.MaxZoomStatus.OK) {
+      // Map max available zoom at this location to ticks
+      let maxAvailableZoom = response.zoom;
+      let zoomRange = maxZoom - minZoom;
+      // Clamp to configured maxZoom if needed
+      if (maxAvailableZoom > maxZoom) maxAvailableZoom = maxZoom;
+      maxTicksAtLocation = Math.round(((maxAvailableZoom - minZoom) / zoomRange) * maxClicks);
+      console.log(`MaxZoomService: maxZoom=${maxAvailableZoom}, maxTicksAtLocation=${maxTicksAtLocation}`);
+      // Fallback: use previous value
+      //maxTicksAtLocation = maxClicks;
+     } else if (response.status === google.maps.MaxZoomStatus.ERROR) {
+      console.warn("MaxZoomService known error (ERROR): Could not get max zoom at location.", response);
+    } else if (response.status === google.maps.MaxZoomStatus.UNKNOWN_ERROR) {
+      console.warn("MaxZoomService unknown error (UNKNOWN_ERROR): Could not get max zoom at location.", response);
+    } else {
+      console.warn("MaxZoomService unexpected status:", response.status, response);
+    }
+  });
+}
+// --- Debounced pan analysis trigger ---
+let panAnalysisTimer = null;
+const panAnalysisDelay = 400; // ms to wait after last pan before analyzing
+let lastPanCenter = null;
+
+function triggerPanAnalysisIfNeeded(nextPosition) {
+  if (panAnalysisTimer) clearTimeout(panAnalysisTimer);
+  panAnalysisTimer = setTimeout(() => {
+    if (!lastPanCenter) lastPanCenter = nextPosition;
+    const dLat = Math.abs(nextPosition.lat() - lastPanCenter.lat());
+    const dLng = Math.abs(nextPosition.lng() - lastPanCenter.lng());
+    const bounds = map.getBounds();
+    const visibleLat = Math.abs(bounds.getNorthEast().lat() - bounds.getSouthWest().lat());
+    const visibleLng = Math.abs(bounds.getNorthEast().lng() - bounds.getSouthWest().lng());
+    if (dLat > visibleLat || dLng > visibleLng || dLat > 1.0 || dLng > 1.0) {
+      updateMaxTicksAtLocation(nextPosition);
+      lastPanCenter = nextPosition;
+    }
+  }, panAnalysisDelay);
+}
+
 // --- Main handler for incoming WebRTC/controller messages ---
 var handleWebSocketMessage = function (event) {
+  //console.log("got message: " + event.data);
   if (! map) return;
   currView = map.getBounds();
   if (currView === undefined) return;
@@ -521,18 +574,14 @@ var handleWebSocketMessage = function (event) {
   currHeight = Math.abs(currTop - currBottom);
   currCenter = map.getCenter();
 
-  let raw = (event && event.data) ? event.data : event;
+let raw = (event && event.data) ? event.data : event;
 if (typeof raw === "string") {
   jsonData = JSON.parse(raw);
 } else {
   jsonData = raw;
 }
-  if (jsonData === null) {
-    console.log("hmmm, no message")
-    return;
-  }
   // Handle encoder (spin) data
-  if (jsonData.type == 'spin') {
+  if (jsonData.type === 'spin') {
     document.getElementById('EncoderID').innerHTML(jsonData.packet.sensorID);
     document.getElementById('EncoderIndex').innerHTML(jsonData.packet.encoderIndex);
     document.getElementById('EncoderDelta').innerHTML(jsonData.packet.encoderDelta);
@@ -547,7 +596,7 @@ if (typeof raw === "string") {
     document.getElementById('TiltMagnitude').innerHTML(jsonData.packet.tiltMagnitude);
   } 
   // Handle pan gesture
-  else if (jsonData.gesture == 'pan') {
+  else if (jsonData.gesture === 'pan') {
     var deltaX = 0;
     var deltaY = 0;
     if (jsonData.vector.x == 0.0 && jsonData.vector.y == 0.0) return;  
@@ -565,22 +614,38 @@ if (typeof raw === "string") {
     if (zoomLayers[currentZoom]['pannable']) {
       map.setCenter(nextPosition);
       restartIdleTimer();
-    }
+    // --- Trigger analysis if pan traverses more than visible area ---
+     triggerPanAnalysisIfNeeded(nextPosition);
+
+     }
     paintTarget();
   } 
   // Handle zoom gesture (spin)
-  else if (jsonData.gesture == 'zoom') {
-    if (jsonData.vector.delta > 0 && !allowZoomIn) {
-      console.log("Zoom in gesture ignored: no valid image data.");
-      return;
+  else if (jsonData.gesture === 'zoom') {
+   //console.log("Zoom gesture received:", jsonData);
+       // Update cumulativeTicks, but clamp to [0, maxClicks]
+    let newTicks = cumulativeTicks + jsonData.vector.delta;
+    if (newTicks < 0 || newTicks > maxTicksAtLocation) {
+        //console.log(" // Ignore out-of-bounds moves", newTicks, "not in [0, ", maxTicksAtLocation, "]");
+        return;
     }
-    currentSpinPosition += jsonData.vector.delta;
-    if (currentSpinPosition < 0) currentSpinPosition = 0;
-    var proposedZoom =  Math.floor(currentSpinPosition/clicksPerZoomLevel);
-    restartIdleTimer();
-    if (proposedZoom != currentZoom) {
-      doZoom(Math.min(Object.keys(zoomLayers).length - 1, Math.max(0,proposedZoom))); 
-    }
+    cumulativeTicks = newTicks;
+
+    // Map cumulativeTicks to zoom level
+    // 0 ticks => minZoom, maxClicks => maxZoom
+    let zoomRange = maxZoom - minZoom;
+    let zoomLevel = minZoom + (cumulativeTicks / maxClicks) * zoomRange;
+    // Optionally round or floor/ceil as needed for your map API
+    //zoomLevel = Math.round(zoomLevel);
+
+    // Set the map zoom
+    if (typeof map.setZoom === "function") {
+        map.setZoom(zoomLevel);
+    } 
+
+    // Optionally update UI or log
+    //console.log(`Zoom gesture: cumulativeTicks=${cumulativeTicks}, zoomLevel=${zoomLevel}`);
+
   }
   // Combo gesture (future use)
   else if (jsonData.gesture == 'combo') {
@@ -621,6 +686,14 @@ if (typeof raw === "string") {
   }
   if ( ! hotspotFound ) {
     closeCedulas();
+  }
+}
+
+function handleWebRTCError(err) {
+  if (err && err.message && err.message.includes("conn is not defined")) {
+    showTestCirclesWithAnnotation("Phidget server is not available");
+  } else {
+    alert("WebRTC connection failed: " + (err && err.message ? err.message : err));
   }
 }
 

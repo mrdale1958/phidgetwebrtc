@@ -119,11 +119,11 @@ class OptimizedSatelliteDetector {
    */
   scheduleAnalysis(reason) {
     if (this.callHistory.length >= this.options.maxCallsPerSecond) {
-      console.log(`Analysis skipped due to rate limiting (${reason})`);
+      console.log(`[${this.getTimestamp()}] Analysis skipped due to rate limiting (${reason})`);
       return;
     }
 
-    console.log(`Scheduling analysis: ${reason}`);
+    console.log(`[${this.getTimestamp()}] Scheduling analysis: ${reason}`);
     this.callHistory.push(Date.now());
     this.performSatelliteAnalysis();
   }
@@ -137,6 +137,7 @@ class OptimizedSatelliteDetector {
       lat: center.lat(),
       lng: center.lng()
     };
+    console.log(`[${this.getTimestamp()}] Performing satellite analysis at center:`, this.lastAnalysisPosition);
     this.checkImageryQuality();
   }
 
@@ -160,14 +161,21 @@ class OptimizedSatelliteDetector {
    */
   async checkImageryQuality() {
     const currentZoom = this.map.getZoom();
-    await this.waitForTilesLoaded();
-    const quality = await this.sampleImageQuality();
+    if (currentZoom < 10) {
+      console.log(`[${this.getTimestamp()}] Checking imagery quality at zoom: ${currentZoom}`);
+      await this.waitForTilesLoaded();
+      const center = this.map.getCenter();
+      
+      const quality = await this.analyzePointQuality({ lat: center.lat(), lng: center.lng() });
 
-    if (quality < this.qualityThreshold && currentZoom > this.lastKnownGoodZoom) {
-      this.onDataLimitReached(currentZoom);
-    } else {
-      this.lastKnownGoodZoom = currentZoom;
-    }
+      console.log(`[${this.getTimestamp()}] Center point imagery quality: ${quality}`);
+      if (quality < this.qualityThreshold && currentZoom > this.lastKnownGoodZoom) {
+        this.onDataLimitReached(currentZoom);
+      } else {
+        this.lastKnownGoodZoom = currentZoom;
+        console.log(`[${this.getTimestamp()}] Imagery quality sufficient. Updated lastKnownGoodZoom to ${this.lastKnownGoodZoom}`);
+      }
+  }
   }
 
   /**
@@ -188,15 +196,17 @@ class OptimizedSatelliteDetector {
    * @returns {Promise<number>} - Average quality score.
    */
   async sampleImageQuality() {
-    // Sample from multiple points in the viewport
     const samples = [];
     const bounds = this.map.getBounds();
     for (let i = 0; i < 5; i++) {
       const samplePoint = this.generateSamplePoint(bounds);
+      console.log(`[${this.getTimestamp()}] Sampling quality at point:`, samplePoint);
       const quality = await this.analyzePointQuality(samplePoint);
       samples.push(quality);
     }
-    return samples.reduce((a, b) => a + b) / samples.length;
+    const avg = samples.reduce((a, b) => a + b) / samples.length;
+    console.log(`[${this.getTimestamp()}] Average quality from samples: ${avg}`);
+    return avg;
   }
 
   /**
@@ -231,25 +241,54 @@ class OptimizedSatelliteDetector {
    * @param {number} zoomLevel
    */
   onDataLimitReached(zoomLevel) {
-    console.log(`Satellite data limit reached at zoom level: ${zoomLevel}`);
+    console.log(`[${this.getTimestamp()}] Satellite data limit reached at zoom level: ${zoomLevel}`);
     google.maps.event.trigger(this.map, 'satellite_data_limit', {
       maxUsefulZoom: this.lastKnownGoodZoom,
       currentZoom: zoomLevel
     });
   }
+
+  /**
+   * Get the current timestamp as an ISO string.
+   * @returns {string}
+   */
+  getTimestamp() {
+    return new Date().toISOString();
+  }
 }
 
-// Usage Example
-/**
- * const detector = new OptimizedSatelliteDetector(map, {
-  debounceDelay: 500,           // Wait 500ms after movement stops
-  integerZoomOnly: true,        // Only check on integer zoom levels
-  panThreshold: 0.001,          // Minimum pan distance (in degrees)
-  maxCallsPerSecond: 3          // Maximum API calls per second
-});
-* 
+// Add this function after your class definition or inside your main script:
+function showZoomDisabledIndicator(message = "Zooming is disabled: high-resolution satellite data unavailable.") {
+  let indicator = document.getElementById("zoom-disabled-indicator");
+  if (!indicator) {
+    indicator = document.createElement("div");
+    indicator.id = "zoom-disabled-indicator";
+    indicator.style.position = "fixed";
+    indicator.style.top = "20px";
+    indicator.style.right = "20px";
+    indicator.style.zIndex = "2000";
+    indicator.style.background = "rgba(200,0,0,0.9)";
+    indicator.style.color = "#fff";
+    indicator.style.padding = "12px 20px";
+    indicator.style.borderRadius = "8px";
+    indicator.style.fontWeight = "bold";
+    indicator.style.fontSize = "1.1em";
+    indicator.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
+    indicator.style.pointerEvents = "none";
+    document.body.appendChild(indicator);
+  }
+  indicator.textContent = message;
+  indicator.style.display = "block";
+}
 
-map.addListener('satellite_data_limit', (event) => {
-  console.log('High resolution satellite data no longer available');
-  // Disable further zoom in, show warning, etc.
-});**/
+// Listen for the custom event and show the indicator:
+if (window.google && window.google.maps && window.map) {
+  window.map.addListener('satellite_data_limit', function(event) {
+    showZoomDisabledIndicator();
+  });
+}
+
+// If you instantiate the detector elsewhere, you can also add:
+//map.addListener('satellite_data_limit', function(event) {
+  //showZoomDisabledIndicator();
+//});

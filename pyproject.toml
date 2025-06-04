@@ -1,0 +1,19 @@
+[project]
+name = "phidgetwebrtc"
+version = "1.0.0"
+description = "python  webrtc/aiohttp server for GeoConnecTable, a Google Maps-based exhibit using phidget sensors on a tilting turning tabletop"
+authors = [
+    {name = "Dale MacDonald",email = "mrdale@botherconsulting.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp (>=3.12.7,<4.0.0)",
+    "rtcbot (>=0.2.5,<0.3.0)",
+    "phidget22 (>=1.22.20250422,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

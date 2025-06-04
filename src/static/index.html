@@ -12,6 +12,11 @@
         var conn = new rtcbot.RTCConnection();
 
          async function connect() {
+            if (typeof window.showTestCirclesWithAnnotation === "undefined") {
+                console.log("Try again soon if not yet loaded");
+                setTimeout(connect, 100);
+                return;
+            }
 
             if (conn && conn.isOpen) {
                 console.log(" WebRTC already connected...");
@@ -25,18 +30,27 @@
                     cache: "no-cache",
                     body: JSON.stringify(offer)
                 });
-                if (!response.ok) {
+                let answer;
+                try {
+                    answer = await response.json();
+                } catch (e) {
+                    // If response is not JSON, fallback to text
                     const text = await response.text();
-                    console.error("Server error:", text);
+                    console.error("Server error (not JSON):", text);
                     alert("WebRTC connection failed: " + text);
                     return;
                 }
 
-                let answer = await response.json();
-
-                if (answer.error) {
-                    console.error("WebRTC connection error from server:", answer.error);
-                    alert("WebRTC connection failed: " + answer.error);
+                if (!response.ok || answer.error) {
+                    const errorMsg = answer && answer.error ? answer.error : response.statusText;
+                    console.log("WebRTC connection error from server:", errorMsg);
+                    if (window.showTestCirclesWithAnnotation) {
+                        console.log("Calling showTestCirclesWithAnnotation because of WebRTC connection error.");
+                        showTestCirclesWithAnnotation("Phidget server is not available");
+                    } else {
+                        console.log("showTestCirclesWithAnnotation is not defined; falling back to alert.");
+                        alert("WebRTC connection failed: " + errorMsg);
+                    }
                     return;
                 }
 
@@ -45,7 +59,7 @@
                 console.log("Ready!");
             }
         }
-        connect();
+        //connect();
 
  // Function to disconnect WebRTC on page unload
         async function disconnectRTC() {
@@ -104,23 +118,34 @@
     <script src="maps_api_key.js"></script>
     <script  >    
         function loadSLPScripts() {
-            var detectorScript = document.createElement('script');
-            detectorScript.src = "OptimizedDataDetector.js";
-            detectorScript.onload = function() {
+            //console.log("Loading OptimizedDataDetector.js");
+            //var detectorScript = document.createElement('script');
+            //detectorScript.src = "OptimizedDataDetector.js";
+            //detectorScript.onload = function() {
+                console.log("Loaded OptimizedDataDetector.js");
                 var configScript = document.createElement('script');
                 configScript.src = "SLPConfig.js";
                 configScript.onload = function() {
-                    var slpScript = document.createElement('script');
-                    slpScript.src = "SLP.js";
-                    slpScript.onload = function() {
-                        initializemap(conn);
+                    console.log("Loaded SLPConfig.js");
+                    var virtualTable = document.createElement('script');
+                    virtualTable.src = "VirtualTable.js";
+                    virtualTable.onload = function() {
+                        console.log("Loaded VirtualTable.js");
+                        var slpScript = document.createElement('script');
+                        slpScript.src = "SLP.js";
+                        slpScript.onload = function() {
+                            console.log("Loaded SLP.js");
+                            initializemap(conn);
+                            connect();
+                        };
+                        document.head.appendChild(slpScript);
                     };
-                    document.head.appendChild(slpScript);
+                    document.head.appendChild(virtualTable);
                 };
                 document.head.appendChild(configScript);
             };
-            document.head.appendChild(detectorScript);
-        }
+            //document.head.appendChild(detectorScript);
+       // }
 
     if (window.GOOGLE_MAPS_API_KEY) {
         var script = document.createElement('script');
@@ -142,11 +167,7 @@
         <div class="english"></div>
     </div> 
    
-    <h1>Click the Button</h1>
-    <button type="button" id="mybutton">Click me!</button>
-    <p>
-        Open the browser's developer tools to see console messages (CTRL+SHIFT+C)
-    </p>
+    
     <ul id="messages"></ul>  
     <script>
         

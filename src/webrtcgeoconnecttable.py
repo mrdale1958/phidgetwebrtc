@@ -15,6 +15,7 @@ from Phidget22.Devices.Encoder import Encoder
 from Phidget22.PhidgetException import PhidgetException
 from GestureProcessor import TiltGestureProcessor, SpinGestureProcessor
 import time
+import argparse
 
 
 __author__ = 'Dale MacDonald'
@@ -32,7 +33,7 @@ config = {
     'accelerometerQueueLength':10,
     'encoderQueueLength':10,
     'tiltSampleRate' : 0.1,
-    'tiltThreshold' : 0.012,
+    'tiltThreshold' : 0.022,
     'flipX' : 1,
     'flipY' : -1,
     'flipZ' : -1,
@@ -113,7 +114,6 @@ class TiltData:
                 self.Xtilt = newXtilt
                 retval = True
             else:
-                print("Xtilt too small", newXtilt)
                 self.Xtilt = 0.0
             newYtilt = sum(self.components[1].items) / self.components[1].qsize()
             if (abs(newYtilt) > config['tiltThreshold']):
@@ -121,12 +121,10 @@ class TiltData:
                 self.Ytilt = newYtilt
                 retval = True
             else:
-                print("Ytilt too small", newYtilt)
                 self.Ytilt = 0.0
             # claculate the current tilt vector and put in self.Xtilt,self.Ytilt if not flat return true else false
             #print(self.sensor.components[0].items,self.sensor.components[1].items)
             return retval
-        print("too soon", self.lastDataReceived - self.lastDataSent, self.lastDataReceived, self.lastDataSent)
         return retval
 
     def ingestSpatialData(self, sensorData):
@@ -142,7 +140,6 @@ class TiltData:
         self.components[1].enqueue(newY)
         self.components[2].enqueue(newZ) 
         self.lastDataReceived = time.time()
-        print("new tilt data", newX, newY, sensorData, self.zeros)
     
     def ingestAccelerometerData(self, index, sensorData):
         if self.components[index].qsize() == 0:
@@ -182,26 +179,6 @@ spinVector = {
 spinHistory = Queue()
 
 
-#Create an encoder object
-try:
-    spinner = Encoder()
-    spindata = SpinData()
-except RuntimeError as e:
-    print("Runtime spinner Exception: %s" % e)
-    print("Exiting....")
-    # exit(1)
-
-#Create an accelerometer object
-try:
-#    spatial = Spatial()
-    accelerometer = Accelerometer()
-    tiltdata = TiltData()
-
-except RuntimeError as e:
-    print("Runtime Exception: %s" % e)
-    print("Exiting....")
-    exit(1)
-
 # Function to handle encoder position change events
 def onEncoderPositionChange(device, positionChange, timeChange, indexTriggered):
     position = positionChange
@@ -216,11 +193,6 @@ def onEncoderPositionChange(device, positionChange, timeChange, indexTriggered):
     }
     conn.put_nowait(action)
 
-# Attach the encoder position change event handler
-spinner.setOnPositionChangeHandler(onEncoderPositionChange)
-
-# Initialize the Phidget accelerometer
-tilter = Accelerometer()
 def SpatialAttached(e):
     attached = e
     tiltdata.serialNumber = attached.getDeviceSerialNumber()
@@ -257,27 +229,6 @@ def SpatialData(device, acceleration, timestamp):
     else:
         print("wrong device: expected-", tiltdata.serialNumber, "got-", source.getDeviceSerialNumber())
 
-try:
-    #logging example, uncomment to generate a log file
-    #spatial.enableLogging(PhidgetLogLevel.PHIDGET_LOG_VERBOSE, "phidgetlog.log")
-
-
-    tilter.setOnAttachHandler(SpatialAttached)
-    tilter.setOnDetachHandler(SpatialDetached)
-    tilter.setOnErrorHandler(SpatialError)
-    tilter.setOnAccelerationChangeHandler(SpatialData)
-except PhidgetException as e:
-    print("Phidget Exception %i: %s" % (e.code, e.details))
-    print("Exiting....")
-    tilter = None
-
-
-conn = RTCConnection()  # For this example, we use just one global connection
-
-@conn.subscribe
-def onMessage(msg):  # Called when messages received from browser
-    print("Got message:", msg["data"])
-    conn.put_nowait({"data": "pong"})
 
 # Function to read accelerometer data and send it via WebRTC
 async def send_accelerometer_data():
@@ -309,41 +260,41 @@ async def connect(request):
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
+# List of static files to serve (relative to the 'static' directory)
+STATIC_FILES = [
+    "index.html",
+    "SLP.css",
+    "SLP.js",
+    "SLPConfig.js",
+    "OptimizedDataDetector.js",
+    "VirtualTable.js",
+    "maps_api_key.js",
+    "clarklogo.png",
+    "mask.png",
+    "svg.js",
+]
+
+@routes.get("/{filename}")
+async def static_file_handler(request):
+    filename = request.match_info["filename"]
+    if filename not in STATIC_FILES:
+        raise web.HTTPNotFound()
+    file_path = os.path.join(os.path.dirname(__file__), "static", filename)
+    # Guess content type
+    content_types = {
+        ".js": "application/javascript",
+        ".css": "text/css",
+        ".png": "image/png",
+        ".html": "text/html",
+    }
+    ext = os.path.splitext(filename)[1]
+    content_type = content_types.get(ext, "application/octet-stream")
+    return web.FileResponse(file_path, headers={"Content-Type": content_type})
+
+# Special case for root ("/") to serve index.html
 @routes.get("/")
 async def index(request):
-    file_path = os.path.join(os.path.dirname(__file__), 'static', 'index.html')
-    return web.FileResponse(file_path)
-@routes.get("/SLP.css")
-async def slpcss(request):
-    file_path = os.path.join(os.path.dirname(__file__), 'static', 'SLP.css')
-    return web.FileResponse(file_path)
-@routes.get("/SLP.js")
-async def slpjs(request):
-    file_path = os.path.join(os.path.dirname(__file__), 'static', 'SLP.js')
-    return web.FileResponse(file_path)
-@routes.get("/SLPConfig.js")
-async def slpconfig(request):
-    file_path = os.path.join(os.path.dirname(__file__), 'static', 'SLPConfig.js')
-    return web.FileResponse(file_path)
-@routes.get("/OptimizedDataDetector.js")
-async def OptimizedDataDetector(request):
-    file_path = os.path.join(os.path.dirname(__file__), 'static', 'OptimizedDataDetector.js')
-    return web.FileResponse(file_path)
-@routes.get("/maps_api_key.js")
-async def maps_api_key(request):
-    file_path = os.path.join(os.path.dirname(__file__), 'static', 'maps_api_key.js')
-    return web.FileResponse(file_path)
-@routes.get("/clarklogo.png")
-async def clarklogo(request):
-    file_path = os.path.join(os.path.dirname(__file__), 'static', 'clarklogo.png')
-    return web.FileResponse(file_path)
-@routes.get("/mask.png")
-async def maskpng(request):
-    file_path = os.path.join(os.path.dirname(__file__), 'static', 'mask.png')
-    return web.FileResponse(file_path)
-@routes.get("/svg.js")
-async def svgjs(request):
-    file_path = os.path.join(os.path.dirname(__file__), 'static', 'svg.js')
+    file_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
     return web.FileResponse(file_path)
     
 
@@ -354,11 +305,6 @@ async def cleanup(app=None):
         
 app = web.Application()
 app.add_routes(routes)
-# Start the accelerometer data sending loop
-tilter.openWaitForAttachment(5000)
-tiltdata.serialNumber = tilter.getDeviceSerialNumber()
-
-spinner.openWaitForAttachment(5000)
 # Create and set the event loop
 #loop = asyncio.new_event_loop()
 #asyncio.set_event_loop(loop)
@@ -383,4 +329,118 @@ async def cleanup_background_tasks(app):
 app.on_startup.append(start_background_tasks)
 app.on_cleanup.append(cleanup_background_tasks)
 
-web.run_app(app, port=8080)
+def setup_phidgets_and_rtc(app):
+    global conn, spinner, spindata, accelerometer, tiltdata, tilter
+
+    try:
+        spinner = Encoder()
+        spindata = SpinData()
+    except RuntimeError as e:
+        print("Runtime spinner Exception: %s" % e)
+        print("Exiting....")
+        return False
+
+    try:
+        accelerometer = Accelerometer()
+        tiltdata = TiltData()
+    except RuntimeError as e:
+        print("Runtime Exception: %s" % e)
+        print("Exiting....")
+        return False
+
+    spinner.setOnPositionChangeHandler(onEncoderPositionChange)
+    tilter = Accelerometer()
+    tilter.setOnAttachHandler(SpatialAttached)
+    tilter.setOnDetachHandler(SpatialDetached)
+    tilter.setOnErrorHandler(SpatialError)
+    tilter.setOnAccelerationChangeHandler(SpatialData)
+    tilter.openWaitForAttachment(5000)
+    tiltdata.serialNumber = tilter.getDeviceSerialNumber()
+    spinner.openWaitForAttachment(5000)
+
+    conn = RTCConnection()  # Only create in this function
+
+    @conn.subscribe
+    def onMessage(msg):
+        print("Got message:", msg["data"])
+        conn.put_nowait({"data": "pong"})
+
+    async def send_accelerometer_data():
+        while True:
+            if (tiltdata.getTilt()):
+                data = tiltdata.getJSON()
+                print(data)
+                conn.put_nowait(data)
+            await asyncio.sleep(0.1)
+
+    async def start_background_tasks(app):
+        app['accel_task'] = asyncio.create_task(send_accelerometer_data())
+
+    async def cleanup_background_tasks(app):
+        app['accel_task'].cancel()
+        try:
+            await app['accel_task']
+        except asyncio.CancelledError:
+            pass
+
+    app.on_startup.append(start_background_tasks)
+    app.on_cleanup.append(cleanup_background_tasks)
+
+    # Register RTCBot routes only if RTC is enabled
+    @routes.get("/rtcbot.js")
+    async def rtcbotjs(request):
+        return web.Response(content_type="application/javascript", text=getRTCBotJS())
+
+    @routes.post("/connect")
+    async def connect(request):
+        global conn
+        clientOffer = await request.json()
+        try:
+            if conn is None or getattr(conn._rtc, "connectionState", None) == "closed":
+                conn = RTCConnection()
+            serverResponse = await conn.getLocalDescription(clientOffer)
+            return web.json_response(serverResponse)
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    return True
+
+# --- Static file routes (always registered) ---
+STATIC_FILES = [
+    "index.html", "SLP.css", "SLP.js", "SLPConfig.js", "OptimizedDataDetector.js",
+    "VirtualTable.js", "maps_api_key.js", "clarklogo.png", "mask.png", "svg.js",
+]
+
+@routes.get("/{filename}")
+async def static_file_handler(request):
+    filename = request.match_info["filename"]
+    if filename not in STATIC_FILES:
+        raise web.HTTPNotFound()
+    file_path = os.path.join(os.path.dirname(__file__), "static", filename)
+    content_types = {
+        ".js": "application/javascript",
+        ".css": "text/css",
+        ".png": "image/png",
+        ".html": "text/html",
+    }
+    ext = os.path.splitext(filename)[1]
+    content_type = content_types.get(ext, "application/octet-stream")
+    return web.FileResponse(file_path, headers={"Content-Type": content_type})
+
+@routes.get("/")
+async def index(request):
+    file_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
+    return web.FileResponse(file_path)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="GeoConnectTable WebRTC Server")
+    parser.add_argument("--no-phidgets", action="store_true", help="Start webserver without Phidgets or WebRTC")
+    args = parser.parse_args()
+
+    app = web.Application()
+    app.add_routes(routes)
+
+    if not args.no_phidgets:
+        setup_phidgets_and_rtc(app)
+
+    web.run_app(app, port=8080)
