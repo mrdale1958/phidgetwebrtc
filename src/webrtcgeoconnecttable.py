@@ -236,7 +236,7 @@ async def send_accelerometer_data():
         #acceleration = tilter.getAcceleration()
         if (tiltdata.getTilt()):
             data = action = tiltdata.getJSON()
-            print(data)
+            #print(data)
             conn.put_nowait(data)
         await asyncio.sleep(0.1)  # Adjust the frequency as needed
 
@@ -362,14 +362,14 @@ def setup_phidgets_and_rtc(app):
 
     @conn.subscribe
     def onMessage(msg):
-        print("Got message:", msg["data"])
+        #print("Got message:", msg["data"])
         conn.put_nowait({"data": "pong"})
 
     async def send_accelerometer_data():
         while True:
             if (tiltdata.getTilt()):
                 data = tiltdata.getJSON()
-                print(data)
+                #print(data)
                 conn.put_nowait(data)
             await asyncio.sleep(0.1)
 
