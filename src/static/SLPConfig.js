@@ -9,6 +9,28 @@ var zoomInToActiveRegions = "zoom in on the active regions";
 var spinToSeeMoreCards = "spin to see more cards about this site";
 
 var siteCardStartLayer = 7;
+var targetWidth = 0.03; // portion of visible map
+
+var maxZoom = 25;
+var minZoom = 3;
+
+var panScaler = 0.3;
+var clicksPerRev =  1024; // weirdly not 3.14159 * 4 *
+var revsPerFullZoom = (maxZoom - minZoom)/8;
+var clicksPerZoomLevel =  clicksPerRev / revsPerFullZoom;
+var maxClicks = clicksPerRev * revsPerFullZoom * 1.0;
+var maxZoomThrottleMs = 2000; // minimum ms between MaxZoomService calls
+
+var clark = new google.maps.LatLng(40.7667, -111.9034);
+var myLatLng = clark;
+var logoimage = {
+  url: "clarklogo.png",
+  origin: new google.maps.Point(0, 0),
+      // The anchor for this image is the base of the flagpole at (0, 32).
+  anchor: new google.maps.Point(0, 16)
+}
+
+
 
 var zoomLayers = {
   '0' : { 
@@ -627,17 +649,6 @@ var hotspots = {
 
 };
 
-var targetWidth = 0.03; // portion of visible map
-
-var maxZoom = 25;
-var minZoom = 3;
-
-var panScaler = 0.3;
-var clicksPerRev =  1024; // weirdly not 3.14159 * 4 *
-var revsPerFullZoom = (maxZoom - minZoom)/8;
-var clicksPerZoomLevel =  clicksPerRev / revsPerFullZoom;
-var maxClicks = clicksPerRev * revsPerFullZoom * 1.0;
-
 var defaultMarkerLabel = {
         color : '#a1e2a1',
         fontFamily : 'arial',
@@ -660,11 +671,3 @@ var defaultIconImage = {
 
 var mexicoCenter = new google.maps.LatLng(23.43348438907877, -103.05326881250002);
 //var laberinto = new google.maps.LatLng(22.118239, -100.998443);
-var clark = new google.maps.LatLng(40.7667, -111.9034);
-var myLatLng = clark;
-var logoimage = {
-  url: "clarklogo.png",
-  origin: new google.maps.Point(0, 0),
-      // The anchor for this image is the base of the flagpole at (0, 32).
-  anchor: new google.maps.Point(0, 16)
-}

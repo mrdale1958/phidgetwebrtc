@@ -53,6 +53,11 @@ var currentFeatureSet = {}; // <-- Add this line
 let cumulativeTicks = 0; // Add at the top-level (if not already present)
 let maxTicksAtLocation = maxClicks; // Will be set by MaxZoomService
 
+// Throttle settings for MaxZoomService calls
+let maxZoomServicePending = false;
+let maxZoomServiceLastCall = 0;
+const maxZoomThrottleMs = 1000; // 1 second throttle
+
 // --- SVG-based instruction rendering ---
 function setInstructions(texta, textb) {
   var element = document.getElementById("circletext");
@@ -516,19 +521,25 @@ function zoomOut() {
 }
 
 function updateMaxTicksAtLocation(latLng) {
-  const maxZoomService = new google.maps.MaxZoomService();
+  // Don't call if another request is pending or if throttle timer hasn't expired
+  if (maxZoomServicePending || 
+      (Date.now() - maxZoomServiceLastCall) < maxZoomThrottleMs) {
+    console.log("MaxZoomService call throttled");
+    return;
+  }
+
+  maxZoomServicePending = true;
   maxZoomService.getMaxZoomAtLatLng(latLng, function(response) {
+    maxZoomServicePending = false;
+    maxZoomServiceLastCall = Date.now();
+
     if (response.status === google.maps.MaxZoomStatus.OK) {
-      // Map max available zoom at this location to ticks
       let maxAvailableZoom = response.zoom;
       let zoomRange = maxZoom - minZoom;
-      // Clamp to configured maxZoom if needed
       if (maxAvailableZoom > maxZoom) maxAvailableZoom = maxZoom;
       maxTicksAtLocation = Math.round(((maxAvailableZoom - minZoom) / zoomRange) * maxClicks);
       console.log(`MaxZoomService: maxZoom=${maxAvailableZoom}, maxTicksAtLocation=${maxTicksAtLocation}`);
-      // Fallback: use previous value
-      //maxTicksAtLocation = maxClicks;
-     } else if (response.status === google.maps.MaxZoomStatus.ERROR) {
+    } else if (response.status === google.maps.MaxZoomStatus.ERROR) {
       console.warn("MaxZoomService known error (ERROR): Could not get max zoom at location.", response);
     } else if (response.status === google.maps.MaxZoomStatus.UNKNOWN_ERROR) {
       console.warn("MaxZoomService unknown error (UNKNOWN_ERROR): Could not get max zoom at location.", response);
