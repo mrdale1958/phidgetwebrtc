@@ -56,7 +56,6 @@ let maxTicksAtLocation = maxClicks; // Will be set by MaxZoomService
 // Throttle settings for MaxZoomService calls
 let maxZoomServicePending = false;
 let maxZoomServiceLastCall = 0;
-const maxZoomThrottleMs = 1000; // 1 second throttle
 
 // --- SVG-based instruction rendering ---
 function setInstructions(texta, textb) {
