@@ -16,7 +16,7 @@ var minZoom = 3;
 
 var panScaler = 0.3;
 var clicksPerRev =  1024; // weirdly not 3.14159 * 4 *
-var revsPerFullZoom = (maxZoom - minZoom)/8;
+var revsPerFullZoom = (maxZoom - minZoom)/2;
 var clicksPerZoomLevel =  clicksPerRev / revsPerFullZoom;
 var maxClicks = clicksPerRev * revsPerFullZoom * 1.0;
 var maxZoomThrottleMs = 2000; // minimum ms between MaxZoomService calls
