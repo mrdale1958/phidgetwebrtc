@@ -52,6 +52,7 @@ var currentFeatureSet = {}; // <-- Add this line
 
 let cumulativeTicks = 0; // Add at the top-level (if not already present)
 let maxTicksAtLocation = maxClicks; // Will be set by MaxZoomService
+let maxZoomService = null; // Initialize as null
 
 // Throttle settings for MaxZoomService calls
 let maxZoomServicePending = false;
@@ -60,7 +61,14 @@ let maxZoomServiceLastCall = 0;
 // Trip wire settings for large zoom changes
 let lastZoomLevel = null;
 const MAX_EXPECTED_DELTA = 5; // Hardware should never send deltas larger than this
-const ZOOM_JUMP_THRESHOLD = 2.0; // Flag zoom level changes larger than this
+const ZOOM_JUMP_THRESHOLD = 0.02; // Flag zoom level changes larger than this (since normal changes are ~0.002)
+
+// Trip wire settings for zoom derivatives during panning
+let zoomHistory = []; // Array of {timestamp, zoomLevel, delta, isPan} objects
+const ZOOM_HISTORY_SIZE = 20; // Keep last 20 zoom events for derivative analysis
+const ZOOM_VELOCITY_THRESHOLD = 0.01; // Alert if zoom velocity exceeds this per second
+const ZOOM_ACCELERATION_THRESHOLD = 0.005; // Alert if zoom acceleration exceeds this per second²
+const PAN_ZOOM_CORRELATION_WINDOW = 2000; // Look for zoom changes within 2 seconds of pan events
 
 // --- SVG-based instruction rendering ---
 function setInstructions(texta, textb) {
@@ -406,12 +414,24 @@ function initializemap(WebRTConnection) {
       map.setCenter(marker.getPosition());
     });  
 
+    // Initialize MaxZoomService if available
+    if (typeof google !== 'undefined' && google.maps && google.maps.MaxZoomService) {
+      maxZoomService = new google.maps.MaxZoomService();
+      console.log(`[${new Date().toISOString()}] MaxZoomService initialized successfully`);
+    } else {
+      console.warn(`[${new Date().toISOString()}] MaxZoomService not available, using default maxTicksAtLocation: ${maxTicksAtLocation}`);
+    }
+
     targetRectangle =  new google.maps.Rectangle();
     doZoom(0);
 
     // Initialize trip wire tracking
     lastZoomLevel = map.getZoom();
     console.log(`[${new Date().toISOString()}] Trip wire initialized: lastZoomLevel = ${lastZoomLevel}`);
+    
+    // Initialize zoom history for derivative analysis
+    addZoomToHistory(lastZoomLevel, 0, false);
+    console.log(`[${new Date().toISOString()}] Zoom derivative tracking initialized`);
 
     // --- Run pan analysis as soon as the map is loaded ---
     triggerPanAnalysisIfNeeded(map.getCenter());
@@ -538,8 +558,15 @@ function updateMaxTicksAtLocation(latLng) {
     latLng: {lat: latLng.lat(), lng: latLng.lng()},
     maxZoomServicePending,
     timeSinceLastCall: Date.now() - maxZoomServiceLastCall,
-    maxZoomThrottleMs
+    maxZoomThrottleMs,
+    maxZoomServiceAvailable: maxZoomService !== null
   });
+  
+  // Check if MaxZoomService is available
+  if (!maxZoomService) {
+    console.log(`[${timestamp}] MaxZoomService not available, keeping current maxTicksAtLocation: ${maxTicksAtLocation}`);
+    return;
+  }
   
   // Don't call if another request is pending or if throttle timer hasn't expired
   if (maxZoomServicePending || 
@@ -566,13 +593,13 @@ function updateMaxTicksAtLocation(latLng) {
       let zoomRange = maxZoom - minZoom;
       if (maxAvailableZoom > maxZoom) maxAvailableZoom = maxZoom;
       let oldMaxTicks = maxTicksAtLocation;
-      maxTicksAtLocation = Math.round(((maxAvailableZoom - minZoom) / zoomRange) * maxClicks);
+      maxTicksAtLocation = Math.round(((maxAvailableZoom - minZoom) / zoomRange) * maxClicks); // Use maxClicks
       
       // TRIP WIRE: Check for large changes in maxTicksAtLocation
       const maxTicksChange = Math.abs(maxTicksAtLocation - oldMaxTicks);
       if (oldMaxTicks > 0 && maxTicksChange > (maxClicks * 0.2)) { // Alert if change is > 20% of maxClicks
         console.error(`[${responseTimestamp}] 🚨 TRIP WIRE: LARGE maxTicksAtLocation CHANGE!`);
-        console.error(`[${responseTimestamp}] 🚨 maxTicksAtLocation changed by ${maxTicksChange} (${((maxTicksChange/maxClicks)*100).toFixed(1)}% of maxClicks)`);
+        console.error(`[${responseTimestamp}] 🚨 maxTicksAtLocation changed by ${maxTicksChange} ticks`);
         console.error(`[${responseTimestamp}] 🚨 Old: ${oldMaxTicks}, New: ${maxTicksAtLocation}`);
         console.error(`[${responseTimestamp}] 🚨 This could cause zoom jumps! Current cumulativeTicks: ${cumulativeTicks}`);
         console.error(`[${responseTimestamp}] 🚨 MaxAvailableZoom: ${maxAvailableZoom}, Location:`, {lat: latLng.lat(), lng: latLng.lng()});
@@ -604,6 +631,107 @@ function updateMaxTicksAtLocation(latLng) {
 let panAnalysisTimer = null;
 const panAnalysisDelay = 400; // ms to wait after last pan before analyzing
 let lastPanCenter = null;
+
+// --- Zoom derivative analysis for detecting drift during panning ---
+function addZoomToHistory(zoomLevel, delta, isPan) {
+  const timestamp = Date.now();
+  zoomHistory.push({
+    timestamp,
+    zoomLevel,
+    delta: delta || 0,
+    isPan
+  });
+  
+  // Keep only recent history
+  if (zoomHistory.length > ZOOM_HISTORY_SIZE) {
+    zoomHistory.shift();
+  }
+  
+  // Analyze derivatives if we have enough data
+  if (zoomHistory.length >= 3) {
+    analyzeZoomDerivatives();
+  }
+}
+
+function analyzeZoomDerivatives() {
+  const recent = zoomHistory.slice(-3); // Last 3 events
+  const timestamp = new Date().toISOString();
+  
+  if (recent.length < 3) return;
+  
+  // Calculate velocity (zoom change per second)
+  const timeDiff1 = (recent[1].timestamp - recent[0].timestamp) / 1000; // seconds
+  const timeDiff2 = (recent[2].timestamp - recent[1].timestamp) / 1000; // seconds
+  
+  if (timeDiff1 <= 0 || timeDiff2 <= 0) return;
+  
+  const zoomDiff1 = recent[1].zoomLevel - recent[0].zoomLevel;
+  const zoomDiff2 = recent[2].zoomLevel - recent[1].zoomLevel;
+  
+  const velocity1 = zoomDiff1 / timeDiff1; // zoom levels per second
+  const velocity2 = zoomDiff2 / timeDiff2; // zoom levels per second
+  
+  // Calculate acceleration (velocity change per second)
+  const acceleration = (velocity2 - velocity1) / timeDiff2;
+  
+  // Check for sustained zoom drift during panning
+  const hasRecentPan = zoomHistory.some(entry => 
+    entry.isPan && (Date.now() - entry.timestamp) < PAN_ZOOM_CORRELATION_WINDOW
+  );
+  
+  // Check if recent events are intentional zoom gestures vs pan-related
+  const recentZoomGestures = recent.filter(entry => !entry.isPan && entry.delta !== 0);
+  const recentPanEvents = recent.filter(entry => entry.isPan);
+  const hasIntentionalZoom = recentZoomGestures.length > 0;
+  
+  console.log(`[${timestamp}] Zoom derivatives:`, {
+    velocity1: velocity1.toFixed(6),
+    velocity2: velocity2.toFixed(6),
+    acceleration: acceleration.toFixed(6),
+    hasRecentPan,
+    hasIntentionalZoom,
+    recentZoomGestures: recentZoomGestures.length,
+    recentPanEvents: recentPanEvents.length,
+    recentEvents: recent.map(r => ({
+      delta: r.delta,
+      zoomLevel: r.zoomLevel.toFixed(6),
+      isPan: r.isPan,
+      ageMs: Date.now() - r.timestamp
+    }))
+  });
+  
+  // TRIP WIRE: High zoom velocity - BUT ONLY if it's NOT from intentional zoom gestures
+  if (Math.abs(velocity2) > ZOOM_VELOCITY_THRESHOLD && !hasIntentionalZoom) {
+    console.error(`[${timestamp}] 🚨 TRIP WIRE: HIGH ZOOM VELOCITY WITHOUT ZOOM GESTURES!`);
+    console.error(`[${timestamp}] 🚨 Zoom velocity: ${velocity2.toFixed(6)} levels/sec (threshold: ${ZOOM_VELOCITY_THRESHOLD})`);
+    console.error(`[${timestamp}] 🚨 Recent pan activity: ${hasRecentPan}`);
+    console.error(`[${timestamp}] 🚨 No intentional zoom gestures detected - this suggests unwanted zoom drift!`);
+    console.error(`[${timestamp}] 🚨 Recent zoom history:`, recent);
+  }
+  
+  // TRIP WIRE: High zoom acceleration - focus on unexpected changes in zoom behavior
+  if (Math.abs(acceleration) > ZOOM_ACCELERATION_THRESHOLD && !hasIntentionalZoom) {
+    console.error(`[${timestamp}] 🚨 TRIP WIRE: HIGH ZOOM ACCELERATION WITHOUT ZOOM GESTURES!`);
+    console.error(`[${timestamp}] 🚨 Zoom acceleration: ${acceleration.toFixed(6)} levels/sec² (threshold: ${ZOOM_ACCELERATION_THRESHOLD})`);
+    console.error(`[${timestamp}] 🚨 Recent pan activity: ${hasRecentPan}`);
+    console.error(`[${timestamp}] 🚨 Velocity change: ${velocity1.toFixed(6)} → ${velocity2.toFixed(6)} levels/sec`);
+    console.error(`[${timestamp}] 🚨 This suggests something is unexpectedly changing zoom behavior!`);
+  }
+  
+  // TRIP WIRE: Sustained zoom drift during panning - ONLY when no zoom gestures present
+  if (hasRecentPan && Math.abs(velocity2) > (ZOOM_VELOCITY_THRESHOLD * 0.5) && !hasIntentionalZoom) {
+    console.error(`[${timestamp}] 🚨 TRIP WIRE: ZOOM DRIFT DURING PANNING!`);
+    console.error(`[${timestamp}] 🚨 Zoom velocity during panning: ${velocity2.toFixed(6)} levels/sec`);
+    console.error(`[${timestamp}] 🚨 This suggests pan gestures are affecting zoom calculations!`);
+    console.error(`[${timestamp}] 🚨 Pan-zoom correlation detected within ${PAN_ZOOM_CORRELATION_WINDOW}ms window`);
+    console.error(`[${timestamp}] 🚨 Recent pan events: ${recentPanEvents.length}, Recent zoom gestures: ${recentZoomGestures.length}`);
+  }
+  
+  // INFORMATIONAL: Log intentional sustained zoom activity (expected behavior)
+  if (hasIntentionalZoom && Math.abs(velocity2) > ZOOM_VELOCITY_THRESHOLD) {
+    console.log(`[${timestamp}] ℹ️  INTENTIONAL SUSTAINED ZOOM: velocity ${velocity2.toFixed(6)} levels/sec from ${recentZoomGestures.length} zoom gesture(s) - this is expected behavior`);
+  }
+}
 
 function triggerPanAnalysisIfNeeded(nextPosition) {
   const timestamp = new Date().toISOString();
@@ -730,6 +858,10 @@ if (typeof raw === "string") {
       pannable: zoomLayers[currentZoom]['pannable']
     });
     
+    // Record current zoom level before pan for derivative analysis
+    const zoomBeforePan = map.getZoom();
+    addZoomToHistory(zoomBeforePan, 0, true); // Mark as pan event
+    
     var deltaX = 0;
     var deltaY = 0;
     if (jsonData.vector.x == 0.0 && jsonData.vector.y == 0.0) {
@@ -763,6 +895,16 @@ if (typeof raw === "string") {
       map.setCenter(nextPosition);
       restartIdleTimer();
       console.log(`[${timestamp}] Pan applied successfully`);
+      
+      // Check for zoom changes after pan operation
+      setTimeout(() => {
+        const zoomAfterPan = map.getZoom();
+        if (Math.abs(zoomAfterPan - zoomBeforePan) > 0.001) {
+          console.warn(`[${new Date().toISOString()}] ⚠️  ZOOM CHANGED DURING PAN! Before: ${zoomBeforePan.toFixed(6)}, After: ${zoomAfterPan.toFixed(6)}, Diff: ${(zoomAfterPan - zoomBeforePan).toFixed(6)}`);
+          addZoomToHistory(zoomAfterPan, 0, true); // Record post-pan zoom
+        }
+      }, 50); // Small delay to let map operations complete
+      
     // --- Trigger analysis if pan traverses more than visible area ---
      triggerPanAnalysisIfNeeded(nextPosition);
 
@@ -805,13 +947,13 @@ if (typeof raw === "string") {
     cumulativeTicks = newTicks;
 
     // Map cumulativeTicks to zoom level
-    // 0 ticks => minZoom, maxClicks => maxZoom
+    // 0 ticks => minZoom, maxTicksAtLocation => maxZoom
     let zoomRange = maxZoom - minZoom;
-    let zoomLevel = minZoom + (cumulativeTicks / maxClicks) * zoomRange;
+    let zoomLevel = minZoom + (cumulativeTicks / maxTicksAtLocation) * zoomRange;
     
     console.log(`[${timestamp}] Zoom level calculation:`, {
       cumulativeTicks,
-      maxClicks,
+      maxTicksAtLocation,
       minZoom,
       maxZoom,
       zoomRange,
@@ -835,8 +977,9 @@ if (typeof raw === "string") {
         console.error(`[${timestamp}] 🚨 Diagnostic info:`, {
           currentMapZoomBeforeChange: map.getZoom(),
           calculatedZoomRange: zoomRange,
-          ticksToZoomRatio: zoomRange / maxClicks,
-          maxTicksAtLocationWhenJumpOccurred: maxTicksAtLocation
+          ticksToZoomRatio: zoomRange / maxTicksAtLocation,
+          maxTicksAtLocationWhenJumpOccurred: maxTicksAtLocation,
+          actualThresholdUsed: ZOOM_JUMP_THRESHOLD
         });
       }
     }
@@ -846,6 +989,9 @@ if (typeof raw === "string") {
         map.setZoom(zoomLevel);
         console.log(`[${timestamp}] ZOOM APPLIED: Set map zoom to ${zoomLevel}`);
         lastZoomLevel = zoomLevel; // Update for next comparison
+        
+        // Add to zoom history for derivative analysis
+        addZoomToHistory(zoomLevel, jsonData.vector.delta, false); // Not a pan event
     } else {
         console.error(`[${timestamp}] ZOOM FAILED: map.setZoom is not a function`);
     }
