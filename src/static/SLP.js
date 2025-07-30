@@ -57,6 +57,11 @@ let maxTicksAtLocation = maxClicks; // Will be set by MaxZoomService
 let maxZoomServicePending = false;
 let maxZoomServiceLastCall = 0;
 
+// Trip wire settings for large zoom changes
+let lastZoomLevel = null;
+const MAX_EXPECTED_DELTA = 5; // Hardware should never send deltas larger than this
+const ZOOM_JUMP_THRESHOLD = 2.0; // Flag zoom level changes larger than this
+
 // --- SVG-based instruction rendering ---
 function setInstructions(texta, textb) {
   var element = document.getElementById("circletext");
@@ -404,6 +409,10 @@ function initializemap(WebRTConnection) {
     targetRectangle =  new google.maps.Rectangle();
     doZoom(0);
 
+    // Initialize trip wire tracking
+    lastZoomLevel = map.getZoom();
+    console.log(`[${new Date().toISOString()}] Trip wire initialized: lastZoomLevel = ${lastZoomLevel}`);
+
     // --- Run pan analysis as soon as the map is loaded ---
     triggerPanAnalysisIfNeeded(map.getCenter());
 
@@ -507,43 +516,87 @@ function disconnectWS() {
 
 // --- Zoom controls (UI and controller) ---
 function zoomIn() {
+  console.log(`[${new Date().toISOString()}] MANUAL ZOOM IN triggered`);
   if (!allowZoomIn) {
     console.log("Zoom in blocked: no valid image data.");
     return;
   }
   var dummyEvent = { 'data' : '{"gesture":"zoom", "vector" : { "delta" : 20 }}'};
+  console.log(`[${new Date().toISOString()}] Sending manual zoom in event:`, dummyEvent);
   handleWebSocketMessage(dummyEvent);
 }
 function zoomOut() {
+  console.log(`[${new Date().toISOString()}] MANUAL ZOOM OUT triggered`);
   var dummyEvent = { 'data' : '{"gesture":"zoom", "vector" : { "delta" : -20 }}'};
+  console.log(`[${new Date().toISOString()}] Sending manual zoom out event:`, dummyEvent);
   handleWebSocketMessage(dummyEvent);
 }
 
 function updateMaxTicksAtLocation(latLng) {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] updateMaxTicksAtLocation called:`, {
+    latLng: {lat: latLng.lat(), lng: latLng.lng()},
+    maxZoomServicePending,
+    timeSinceLastCall: Date.now() - maxZoomServiceLastCall,
+    maxZoomThrottleMs
+  });
+  
   // Don't call if another request is pending or if throttle timer hasn't expired
   if (maxZoomServicePending || 
       (Date.now() - maxZoomServiceLastCall) < maxZoomThrottleMs) {
-    console.log("MaxZoomService call throttled");
+    console.log(`[${timestamp}] MaxZoomService call throttled`);
     return;
   }
 
   maxZoomServicePending = true;
+  console.log(`[${timestamp}] Making MaxZoomService request...`);
   maxZoomService.getMaxZoomAtLatLng(latLng, function(response) {
+    const responseTimestamp = new Date().toISOString();
     maxZoomServicePending = false;
     maxZoomServiceLastCall = Date.now();
+
+    console.log(`[${responseTimestamp}] MaxZoomService response:`, {
+      status: response.status,
+      zoom: response.zoom,
+      latLng: {lat: latLng.lat(), lng: latLng.lng()}
+    });
 
     if (response.status === google.maps.MaxZoomStatus.OK) {
       let maxAvailableZoom = response.zoom;
       let zoomRange = maxZoom - minZoom;
       if (maxAvailableZoom > maxZoom) maxAvailableZoom = maxZoom;
+      let oldMaxTicks = maxTicksAtLocation;
       maxTicksAtLocation = Math.round(((maxAvailableZoom - minZoom) / zoomRange) * maxClicks);
-      console.log(`MaxZoomService: maxZoom=${maxAvailableZoom}, maxTicksAtLocation=${maxTicksAtLocation}`);
+      
+      // TRIP WIRE: Check for large changes in maxTicksAtLocation
+      const maxTicksChange = Math.abs(maxTicksAtLocation - oldMaxTicks);
+      if (oldMaxTicks > 0 && maxTicksChange > (maxClicks * 0.2)) { // Alert if change is > 20% of maxClicks
+        console.error(`[${responseTimestamp}] 🚨 TRIP WIRE: LARGE maxTicksAtLocation CHANGE!`);
+        console.error(`[${responseTimestamp}] 🚨 maxTicksAtLocation changed by ${maxTicksChange} (${((maxTicksChange/maxClicks)*100).toFixed(1)}% of maxClicks)`);
+        console.error(`[${responseTimestamp}] 🚨 Old: ${oldMaxTicks}, New: ${maxTicksAtLocation}`);
+        console.error(`[${responseTimestamp}] 🚨 This could cause zoom jumps! Current cumulativeTicks: ${cumulativeTicks}`);
+        console.error(`[${responseTimestamp}] 🚨 MaxAvailableZoom: ${maxAvailableZoom}, Location:`, {lat: latLng.lat(), lng: latLng.lng()});
+        
+        // If current ticks are now out of bounds due to the change, that's a major red flag
+        if (cumulativeTicks > maxTicksAtLocation) {
+          console.error(`[${responseTimestamp}] 🚨 CRITICAL: cumulativeTicks (${cumulativeTicks}) now exceeds new maxTicksAtLocation (${maxTicksAtLocation})!`);
+        }
+      }
+      
+      console.log(`[${responseTimestamp}] MaxZoomService SUCCESS:`, {
+        maxAvailableZoom,
+        oldMaxTicksAtLocation: oldMaxTicks,
+        newMaxTicksAtLocation: maxTicksAtLocation,
+        currentCumulativeTicks: cumulativeTicks,
+        ticksNowOutOfBounds: cumulativeTicks > maxTicksAtLocation,
+        maxTicksChangeAmount: maxTicksChange
+      });
     } else if (response.status === google.maps.MaxZoomStatus.ERROR) {
-      console.warn("MaxZoomService known error (ERROR): Could not get max zoom at location.", response);
+      console.warn(`[${responseTimestamp}] MaxZoomService known error (ERROR): Could not get max zoom at location.`, response);
     } else if (response.status === google.maps.MaxZoomStatus.UNKNOWN_ERROR) {
-      console.warn("MaxZoomService unknown error (UNKNOWN_ERROR): Could not get max zoom at location.", response);
+      console.warn(`[${responseTimestamp}] MaxZoomService unknown error (UNKNOWN_ERROR): Could not get max zoom at location.`, response);
     } else {
-      console.warn("MaxZoomService unexpected status:", response.status, response);
+      console.warn(`[${responseTimestamp}] MaxZoomService unexpected status:`, response.status, response);
     }
   });
 }
@@ -553,24 +606,57 @@ const panAnalysisDelay = 400; // ms to wait after last pan before analyzing
 let lastPanCenter = null;
 
 function triggerPanAnalysisIfNeeded(nextPosition) {
-  if (panAnalysisTimer) clearTimeout(panAnalysisTimer);
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] triggerPanAnalysisIfNeeded called:`, {
+    nextPosition: {lat: nextPosition.lat(), lng: nextPosition.lng()},
+    lastPanCenter: lastPanCenter ? {lat: lastPanCenter.lat(), lng: lastPanCenter.lng()} : null,
+    panAnalysisTimerActive: panAnalysisTimer !== null
+  });
+  
+  if (panAnalysisTimer) {
+    console.log(`[${timestamp}] Clearing existing pan analysis timer`);
+    clearTimeout(panAnalysisTimer);
+  }
+  
   panAnalysisTimer = setTimeout(() => {
-    if (!lastPanCenter) lastPanCenter = nextPosition;
+    const analysisTimestamp = new Date().toISOString();
+    if (!lastPanCenter) {
+      console.log(`[${analysisTimestamp}] No lastPanCenter, setting to current position`);
+      lastPanCenter = nextPosition;
+    }
+    
     const dLat = Math.abs(nextPosition.lat() - lastPanCenter.lat());
     const dLng = Math.abs(nextPosition.lng() - lastPanCenter.lng());
     const bounds = map.getBounds();
     const visibleLat = Math.abs(bounds.getNorthEast().lat() - bounds.getSouthWest().lat());
     const visibleLng = Math.abs(bounds.getNorthEast().lng() - bounds.getSouthWest().lng());
+    
+    console.log(`[${analysisTimestamp}] Pan analysis calculations:`, {
+      dLat,
+      dLng,
+      visibleLat,
+      visibleLng,
+      dLatExceedsVisible: dLat > visibleLat,
+      dLngExceedsVisible: dLng > visibleLng,
+      dLatExceedsThreshold: dLat > 1.0,
+      dLngExceedsThreshold: dLng > 1.0
+    });
+    
     if (dLat > visibleLat || dLng > visibleLng || dLat > 1.0 || dLng > 1.0) {
+      console.log(`[${analysisTimestamp}] TRIGGERING MaxZoom update due to significant pan`);
       updateMaxTicksAtLocation(nextPosition);
       lastPanCenter = nextPosition;
+    } else {
+      console.log(`[${analysisTimestamp}] Pan analysis: No significant movement, skipping MaxZoom update`);
     }
   }, panAnalysisDelay);
 }
 
 // --- Main handler for incoming WebRTC/controller messages ---
 var handleWebSocketMessage = function (event) {
-  //console.log("got message: " + event.data);
+  // Add timestamp for debugging
+  const timestamp = new Date().toISOString();
+  
   if (! map) return;
   currView = map.getBounds();
   if (currView === undefined) return;
@@ -590,26 +676,67 @@ if (typeof raw === "string") {
 } else {
   jsonData = raw;
 }
+
+  // Log all incoming messages with type/gesture identification
+  console.log(`[${timestamp}] Raw message:`, raw);
+  console.log(`[${timestamp}] Parsed data:`, jsonData);
+  console.log(`[${timestamp}] Message type: ${jsonData.type || 'undefined'}, gesture: ${jsonData.gesture || 'undefined'}`);
+  
+  // TRIP WIRE: Check for suspicious message patterns
+  if (jsonData.gesture === 'zoom' && jsonData.vector && !jsonData.vector.hasOwnProperty('delta')) {
+    console.error(`[${timestamp}] 🚨 TRIP WIRE: ZOOM gesture missing delta property!`, jsonData);
+  }
+  if (jsonData.gesture === 'pan' && jsonData.vector && jsonData.vector.hasOwnProperty('delta')) {
+    console.error(`[${timestamp}] 🚨 TRIP WIRE: PAN gesture has unexpected delta property!`, jsonData);
+  }
+  
+  // Track current state before processing
+  const currentMapZoom = map.getZoom();
+  console.log(`[${timestamp}] Current state - MapZoom: ${currentMapZoom}, CumulativeTicks: ${cumulativeTicks}, MaxTicksAtLocation: ${maxTicksAtLocation}`);
   // Handle encoder (spin) data
   if (jsonData.type === 'spin') {
-    document.getElementById('EncoderID').innerHTML(jsonData.packet.sensorID);
-    document.getElementById('EncoderIndex').innerHTML(jsonData.packet.encoderIndex);
-    document.getElementById('EncoderDelta').innerHTML(jsonData.packet.encoderDelta);
-    document.getElementById('EncoderElapsedTime').innerHTML(jsonData.packet.encoderElapsedTime);
-    document.getElementById('EncoderPosition').innerHTML(jsonData.packet.encoderPosition);
+    console.log(`[${timestamp}] SPIN DATA:`, {
+      sensorID: jsonData.packet.sensorID,
+      encoderIndex: jsonData.packet.encoderIndex,
+      encoderDelta: jsonData.packet.encoderDelta,
+      encoderElapsedTime: jsonData.packet.encoderElapsedTime,
+      encoderPosition: jsonData.packet.encoderPosition
+    });
+    document.getElementById('EncoderID').innerHTML = jsonData.packet.sensorID;
+    document.getElementById('EncoderIndex').innerHTML = jsonData.packet.encoderIndex;
+    document.getElementById('EncoderDelta').innerHTML = jsonData.packet.encoderDelta;
+    document.getElementById('EncoderElapsedTime').innerHTML = jsonData.packet.encoderElapsedTime;
+    document.getElementById('EncoderPosition').innerHTML = jsonData.packet.encoderPosition;
   } 
   // Handle tilt sensor data
   else if (jsonData.type == 'tilt') {
-    document.getElementById('TiltsensorID').innerHTML(jsonData.packet.sensorID);
-    document.getElementById('TiltX').innerHTML(jsonData.packet.tiltX);
-    document.getElementById('TiltY').innerHTML(jsonData.packet.tiltY);
-    document.getElementById('TiltMagnitude').innerHTML(jsonData.packet.tiltMagnitude);
+    console.log(`[${timestamp}] TILT DATA:`, {
+      sensorID: jsonData.packet.sensorID,
+      tiltX: jsonData.packet.tiltX,
+      tiltY: jsonData.packet.tiltY,
+      tiltMagnitude: jsonData.packet.tiltMagnitude
+    });
+    document.getElementById('TiltsensorID').innerHTML = jsonData.packet.sensorID;
+    document.getElementById('TiltX').innerHTML = jsonData.packet.tiltX;
+    document.getElementById('TiltY').innerHTML = jsonData.packet.tiltY;
+    document.getElementById('TiltMagnitude').innerHTML = jsonData.packet.tiltMagnitude;
   } 
   // Handle pan gesture
   else if (jsonData.gesture === 'pan') {
+    console.log(`[${timestamp}] PAN GESTURE:`, {
+      vectorX: jsonData.vector.x,
+      vectorY: jsonData.vector.y,
+      currentZoom: currentZoom,
+      pannable: zoomLayers[currentZoom]['pannable']
+    });
+    
     var deltaX = 0;
     var deltaY = 0;
-    if (jsonData.vector.x == 0.0 && jsonData.vector.y == 0.0) return;  
+    if (jsonData.vector.x == 0.0 && jsonData.vector.y == 0.0) {
+      console.log(`[${timestamp}] Pan gesture ignored: zero vector`);
+      return;
+    }
+    
     var zoomFudge = (minZoom + 7) +
       ((minZoom + 7) - (maxZoom-3 ))/(minZoom-maxZoom) *
       (map.getZoom()-minZoom);
@@ -621,22 +748,58 @@ if (typeof raw === "string") {
     var nextPosition = new google.maps.LatLng(
       Math.min(Math.max(newLat, -89 + currHeight/2),89-currHeight/2),
       currCenter.lng() + deltaX);
+      
+    console.log(`[${timestamp}] Pan calculations:`, {
+      zoomFudge,
+      percentChangeInY,
+      percentChangeInX,
+      deltaY,
+      deltaX,
+      currentCenter: {lat: currCenter.lat(), lng: currCenter.lng()},
+      nextPosition: {lat: nextPosition.lat(), lng: nextPosition.lng()}
+    });
+    
     if (zoomLayers[currentZoom]['pannable']) {
       map.setCenter(nextPosition);
       restartIdleTimer();
+      console.log(`[${timestamp}] Pan applied successfully`);
     // --- Trigger analysis if pan traverses more than visible area ---
      triggerPanAnalysisIfNeeded(nextPosition);
 
+     } else {
+      console.log(`[${timestamp}] Pan ignored: layer not pannable`);
      }
     paintTarget();
   } 
   // Handle zoom gesture (spin)
   else if (jsonData.gesture === 'zoom') {
-   //console.log("Zoom gesture received:", jsonData);
-       // Update cumulativeTicks, but clamp to [0, maxClicks]
+   console.log(`[${timestamp}] ZOOM GESTURE RECEIVED:`, {
+     delta: jsonData.vector.delta,
+     currentCumulativeTicks: cumulativeTicks,
+     maxTicksAtLocation: maxTicksAtLocation,
+     currentMapZoom: map.getZoom()
+   });
+   
+   // TRIP WIRE: Check for unexpectedly large deltas
+   if (Math.abs(jsonData.vector.delta) > MAX_EXPECTED_DELTA) {
+     console.error(`[${timestamp}] 🚨 TRIP WIRE: UNEXPECTED LARGE DELTA! Delta=${jsonData.vector.delta}, expected max=${MAX_EXPECTED_DELTA}`);
+     console.error(`[${timestamp}] 🚨 Raw message that caused large delta:`, raw);
+     console.error(`[${timestamp}] 🚨 Full parsed data:`, jsonData);
+     console.trace(`[${timestamp}] 🚨 Stack trace for large delta`);
+   }
+   
+   // Update cumulativeTicks, but clamp to [0, maxClicks]
     let newTicks = cumulativeTicks + jsonData.vector.delta;
+    console.log(`[${timestamp}] Zoom calculation:`, {
+      oldTicks: cumulativeTicks,
+      delta: jsonData.vector.delta,
+      newTicks: newTicks,
+      maxTicksAtLocation: maxTicksAtLocation,
+      wouldBeOutOfBounds: (newTicks < 0 || newTicks > maxTicksAtLocation)
+    });
+    
     if (newTicks < 0 || newTicks > maxTicksAtLocation) {
-        //console.log(" // Ignore out-of-bounds moves", newTicks, "not in [0, ", maxTicksAtLocation, "]");
+        console.log(`[${timestamp}] ZOOM IGNORED: Out-of-bounds ticks ${newTicks} not in [0, ${maxTicksAtLocation}]`);
         return;
     }
     cumulativeTicks = newTicks;
@@ -645,24 +808,61 @@ if (typeof raw === "string") {
     // 0 ticks => minZoom, maxClicks => maxZoom
     let zoomRange = maxZoom - minZoom;
     let zoomLevel = minZoom + (cumulativeTicks / maxClicks) * zoomRange;
-    // Optionally round or floor/ceil as needed for your map API
-    //zoomLevel = Math.round(zoomLevel);
+    
+    console.log(`[${timestamp}] Zoom level calculation:`, {
+      cumulativeTicks,
+      maxClicks,
+      minZoom,
+      maxZoom,
+      zoomRange,
+      calculatedZoomLevel: zoomLevel,
+      previousMapZoom: map.getZoom()
+    });
+
+    // TRIP WIRE: Check for unexpectedly large zoom level changes
+    if (lastZoomLevel !== null) {
+      const zoomLevelChange = Math.abs(zoomLevel - lastZoomLevel);
+      if (zoomLevelChange > ZOOM_JUMP_THRESHOLD) {
+        console.error(`[${timestamp}] 🚨 TRIP WIRE: LARGE ZOOM LEVEL JUMP!`);
+        console.error(`[${timestamp}] 🚨 Zoom level changed by ${zoomLevelChange} (threshold: ${ZOOM_JUMP_THRESHOLD})`);
+        console.error(`[${timestamp}] 🚨 Previous zoom level: ${lastZoomLevel}, New zoom level: ${zoomLevel}`);
+        console.error(`[${timestamp}] 🚨 Delta that caused jump: ${jsonData.vector.delta}`);
+        console.error(`[${timestamp}] 🚨 Cumulative ticks: ${cumulativeTicks}, Max ticks: ${maxTicksAtLocation}`);
+        console.error(`[${timestamp}] 🚨 Raw message:`, raw);
+        console.trace(`[${timestamp}] 🚨 Stack trace for zoom jump`);
+        
+        // Additional diagnostic info
+        console.error(`[${timestamp}] 🚨 Diagnostic info:`, {
+          currentMapZoomBeforeChange: map.getZoom(),
+          calculatedZoomRange: zoomRange,
+          ticksToZoomRatio: zoomRange / maxClicks,
+          maxTicksAtLocationWhenJumpOccurred: maxTicksAtLocation
+        });
+      }
+    }
 
     // Set the map zoom
     if (typeof map.setZoom === "function") {
         map.setZoom(zoomLevel);
-    } 
-
-    // Optionally update UI or log
-    //console.log(`Zoom gesture: cumulativeTicks=${cumulativeTicks}, zoomLevel=${zoomLevel}`);
+        console.log(`[${timestamp}] ZOOM APPLIED: Set map zoom to ${zoomLevel}`);
+        lastZoomLevel = zoomLevel; // Update for next comparison
+    } else {
+        console.error(`[${timestamp}] ZOOM FAILED: map.setZoom is not a function`);
+    }
 
   }
   // Combo gesture (future use)
   else if (jsonData.gesture == 'combo') {
+    console.log(`[${timestamp}] COMBO GESTURE: Not implemented`, jsonData);
     // needs to use above
   } 
   // Handle unknown messages
   else { 
+    console.log(`[${timestamp}] UNKNOWN MESSAGE TYPE:`, {
+      type: jsonData.type,
+      gesture: jsonData.gesture,
+      fullData: jsonData
+    });
     messages = document.getElementsByTagName('ul')[0];
     var message = document.createElement('li');
     var content = document.createTextNode(event.data);
