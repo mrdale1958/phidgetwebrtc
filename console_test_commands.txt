@@ -1,0 +1,41 @@
+// === CONSOLE TESTING COMMANDS FOR NEW ZOOM BEHAVIOR ===
+
+// 1. Check current zoom configuration
+console.log("=== ZOOM CONFIGURATION ===");
+console.log("maxClicks:", maxClicks);
+console.log("maxTicksAtLocation:", maxTicksAtLocation);
+console.log("maxAvailableZoomAtLocation:", maxAvailableZoomAtLocation);
+console.log("cumulativeTicks:", cumulativeTicks);
+console.log("Current map zoom:", map.getZoom());
+
+// 2. Test MaxZoomService at current location
+console.log("=== TESTING MaxZoomService ===");
+updateMaxTicksAtLocation(map.getCenter());
+
+// 3. Calculate what zoom level different tick values would produce
+console.log("=== ZOOM CALCULATION EXAMPLES ===");
+let testTicks = [0, 704, 1408, 2112, 2816]; // 0%, 25%, 50%, 75%, 100% of maxClicks
+testTicks.forEach(ticks => {
+  let calculatedZoom = minZoom + (ticks / maxTicksAtLocation) * (maxZoom - minZoom);
+  let clampedZoom = Math.min(calculatedZoom, maxAvailableZoomAtLocation);
+  console.log(`${ticks} ticks → calculated: ${calculatedZoom.toFixed(2)}, clamped: ${clampedZoom.toFixed(2)}`);
+});
+
+// 4. Simulate zoom gesture to test behavior
+console.log("=== SIMULATING ZOOM GESTURES ===");
+let testZoomIn = { 'data' : '{"gesture":"zoom", "vector" : { "delta" : 50 }}'};
+let testZoomOut = { 'data' : '{"gesture":"zoom", "vector" : { "delta" : -50 }}'};
+console.log("Test zoom in (delta +50):");
+handleWebSocketMessage(testZoomIn);
+console.log("Test zoom out (delta -50):");
+handleWebSocketMessage(testZoomOut);
+
+// 5. Check if physical rotation behavior is consistent
+console.log("=== PHYSICAL ROTATION CONSISTENCY ===");
+console.log("Expected: 1 full rotation = 1024 ticks should always feel the same");
+console.log("Actual maxTicksAtLocation:", maxTicksAtLocation, "(should always be", maxClicks, ")");
+console.log("Available zoom range:", maxAvailableZoomAtLocation - minZoom, "of", maxZoom - minZoom, "total levels");
+
+// 6. Generate current zoom time series data
+console.log("=== CURRENT ZOOM TIME SERIES ===");
+generateZoomTimeSeriesPlot();

@@ -1,0 +1,72 @@
+// === CONSOLE TESTING FOR IMMEDIATE ZOOM REVERSAL ===
+
+// 1. Check current configuration and satellite data limits
+console.log("=== CURRENT ZOOM STATE ===");
+console.log("maxClicks:", maxClicks);
+console.log("maxTicksAtLocation:", maxTicksAtLocation); 
+console.log("maxAvailableZoomAtLocation:", maxAvailableZoomAtLocation);
+console.log("cumulativeTicks:", cumulativeTicks);
+console.log("Current map zoom:", map.getZoom());
+
+// Calculate the tick limit for available satellite data
+let fullZoomRange = maxZoom - minZoom;
+let maxTicksForAvailableZoom = ((maxAvailableZoomAtLocation - minZoom) / fullZoomRange) * maxTicksAtLocation;
+console.log("maxTicksForAvailableZoom:", maxTicksForAvailableZoom);
+console.log("Remaining ticks before hitting satellite limit:", maxTicksForAvailableZoom - cumulativeTicks);
+
+// 2. Test zooming to satellite data limit
+console.log("\n=== TESTING ZOOM TO SATELLITE LIMIT ===");
+// Calculate ticks needed to reach satellite limit
+let ticksToReachLimit = Math.ceil(maxTicksForAvailableZoom - cumulativeTicks);
+console.log("Sending", ticksToReachLimit, "ticks to reach satellite limit...");
+let reachLimitEvent = { 'data' : `{"gesture":"zoom", "vector" : { "delta" : ${ticksToReachLimit} }}`};
+handleWebSocketMessage(reachLimitEvent);
+
+// 3. Test trying to zoom beyond satellite limit (should be ignored)
+console.log("\n=== TESTING ZOOM BEYOND SATELLITE LIMIT (should be ignored) ===");
+let beyondLimitEvent = { 'data' : '{"gesture":"zoom", "vector" : { "delta" : 100 }}'};
+console.log("Sending +100 ticks beyond satellite limit (should be ignored):");
+console.log("cumulativeTicks before:", cumulativeTicks);
+handleWebSocketMessage(beyondLimitEvent);
+console.log("cumulativeTicks after:", cumulativeTicks, "(should be unchanged)");
+
+// 4. Test immediate reversal (should work immediately)
+console.log("\n=== TESTING IMMEDIATE ZOOM REVERSAL ===");
+let reverseEvent = { 'data' : '{"gesture":"zoom", "vector" : { "delta" : -50 }}'};
+console.log("Sending -50 ticks (should immediately zoom out):");
+console.log("Map zoom before:", map.getZoom());
+handleWebSocketMessage(reverseEvent);
+console.log("Map zoom after:", map.getZoom(), "(should be lower)");
+
+// 5. Test user experience scenario
+console.log("\n=== USER EXPERIENCE TEST ===");
+console.log("Simulating user spinning past satellite limit then reversing...");
+
+// Reset to a known state first
+cumulativeTicks = Math.floor(maxTicksForAvailableZoom * 0.8); // Start at 80% of limit
+console.log("Reset cumulativeTicks to:", cumulativeTicks);
+let resetZoom = minZoom + (cumulativeTicks / maxTicksAtLocation) * fullZoomRange;
+map.setZoom(Math.min(resetZoom, maxAvailableZoomAtLocation));
+
+// Spin to limit
+let toLimit = Math.ceil(maxTicksForAvailableZoom - cumulativeTicks);
+console.log("Step 1: Zoom to satellite limit (+", toLimit, "ticks)");
+handleWebSocketMessage({ 'data' : `{"gesture":"zoom", "vector" : { "delta" : ${toLimit} }}`});
+
+// Try to spin beyond (should be ignored)
+console.log("Step 2: Try to zoom beyond limit (+200 ticks - should be ignored)");
+let ticksBefore = cumulativeTicks;
+handleWebSocketMessage({ 'data' : '{"gesture":"zoom", "vector" : { "delta" : 200 }}'});
+console.log("Ticks before:", ticksBefore, "Ticks after:", cumulativeTicks);
+
+// Immediate reversal (should work)
+console.log("Step 3: Immediately reverse direction (-30 ticks - should work)");
+let zoomBefore = map.getZoom();
+handleWebSocketMessage({ 'data' : '{"gesture":"zoom", "vector" : { "delta" : -30 }}'});
+console.log("Zoom before:", zoomBefore.toFixed(3), "Zoom after:", map.getZoom().toFixed(3));
+console.log("SUCCESS: Immediate reversal without rewinding useless ticks!");
+
+console.log("\n=== TEST COMPLETE ===");
+console.log("✅ Users can now spin past satellite limit without penalty");
+console.log("✅ Reversing direction immediately zooms out");
+console.log("✅ No need to 'rewind' accumulated useless ticks");

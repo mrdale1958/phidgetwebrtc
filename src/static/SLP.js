@@ -51,7 +51,8 @@ var lastZoom = -1;
 var currentFeatureSet = {}; // <-- Add this line
 
 let cumulativeTicks = 0; // Add at the top-level (if not already present)
-let maxTicksAtLocation = maxClicks; // Will be set by MaxZoomService
+let maxTicksAtLocation = maxClicks; // Always use full range for consistent physical behavior
+let maxAvailableZoomAtLocation = maxZoom; // Will be set by MaxZoomService to limit actual zoom
 let maxZoomService = null; // Initialize as null
 
 // Configuration flags
@@ -763,35 +764,35 @@ function updateMaxTicksAtLocation(latLng) {
     });
 
     if (response.status === google.maps.MaxZoomStatus.OK) {
-      let maxAvailableZoom = response.zoom;
-      let zoomRange = maxZoom - minZoom;
-      if (maxAvailableZoom > maxZoom) maxAvailableZoom = maxZoom;
-      let oldMaxTicks = maxTicksAtLocation;
-      maxTicksAtLocation = Math.round(((maxAvailableZoom - minZoom) / zoomRange) * maxClicks); // Use maxClicks
+      let newMaxAvailableZoom = response.zoom;
+      if (newMaxAvailableZoom > maxZoom) newMaxAvailableZoom = maxZoom; // Cap at our app's maximum
       
-      // TRIP WIRE: Check for large changes in maxTicksAtLocation
-      const maxTicksChange = Math.abs(maxTicksAtLocation - oldMaxTicks);
-      if (oldMaxTicks > 0 && maxTicksChange > (maxClicks * 0.2)) { // Alert if change is > 20% of maxClicks
-        console.error(`[${responseTimestamp}] 🚨 TRIP WIRE: LARGE maxTicksAtLocation CHANGE!`);
-        console.error(`[${responseTimestamp}] 🚨 maxTicksAtLocation changed by ${maxTicksChange} ticks`);
-        console.error(`[${responseTimestamp}] 🚨 Old: ${oldMaxTicks}, New: ${maxTicksAtLocation}`);
-        console.error(`[${responseTimestamp}] 🚨 This could cause zoom jumps! Current cumulativeTicks: ${cumulativeTicks}`);
-        console.error(`[${responseTimestamp}] 🚨 MaxAvailableZoom: ${maxAvailableZoom}, Location:`, {lat: latLng.lat(), lng: latLng.lng()});
-        
-        // If current ticks are now out of bounds due to the change, that's a major red flag
-        if (cumulativeTicks > maxTicksAtLocation) {
-          console.error(`[${responseTimestamp}] 🚨 CRITICAL: cumulativeTicks (${cumulativeTicks}) now exceeds new maxTicksAtLocation (${maxTicksAtLocation})!`);
-        }
-      }
+      let oldMaxAvailableZoom = maxAvailableZoomAtLocation;
+      maxAvailableZoomAtLocation = newMaxAvailableZoom;
+      
+      // Keep maxTicksAtLocation constant for consistent physical behavior
+      // The zoom clamping will happen during zoom calculation
       
       console.log(`[${responseTimestamp}] MaxZoomService SUCCESS:`, {
-        maxAvailableZoom,
-        oldMaxTicksAtLocation: oldMaxTicks,
-        newMaxTicksAtLocation: maxTicksAtLocation,
+        maxAvailableZoom: newMaxAvailableZoom,
+        oldMaxAvailableZoom: oldMaxAvailableZoom,
+        maxTicksAtLocation: maxTicksAtLocation, // Always maxClicks for consistent rotation
         currentCumulativeTicks: cumulativeTicks,
-        ticksNowOutOfBounds: cumulativeTicks > maxTicksAtLocation,
-        maxTicksChangeAmount: maxTicksChange
+        availableZoomRange: newMaxAvailableZoom - minZoom,
+        fullZoomRange: maxZoom - minZoom
       });
+      
+      // TRIP WIRE: Check for large changes in available zoom
+      const availableZoomChange = Math.abs(newMaxAvailableZoom - oldMaxAvailableZoom);
+      if (oldMaxAvailableZoom > 0 && availableZoomChange > 2) { // Alert if change is > 2 zoom levels
+        console.warn(`[${responseTimestamp}] 📍 LOCATION ZOOM BOUNDARY CHANGE:`, {
+          change: availableZoomChange,
+          oldMax: oldMaxAvailableZoom,
+          newMax: newMaxAvailableZoom,
+          location: {lat: latLng.lat(), lng: latLng.lng()},
+          note: "Physical rotation behavior remains consistent"
+        });
+      }
     } else if (response.status === google.maps.MaxZoomStatus.ERROR) {
       console.warn(`[${responseTimestamp}] MaxZoomService known error (ERROR): Could not get max zoom at location.`, response);
     } else if (response.status === google.maps.MaxZoomStatus.UNKNOWN_ERROR) {
@@ -1104,70 +1105,105 @@ if (typeof raw === "string") {
      console.trace(`[${timestamp}] 🚨 Stack trace for large delta`);
    }
    
-   // Update cumulativeTicks, but clamp to [0, maxClicks]
+   // Update cumulativeTicks, but clamp to [0, maxClicks] for consistent physical behavior
     let newTicks = cumulativeTicks + jsonData.vector.delta;
+    
+    // Calculate what zoom level the new ticks would produce
+    let fullZoomRange = maxZoom - minZoom;
+    let calculatedZoomLevel = minZoom + (newTicks / maxTicksAtLocation) * fullZoomRange;
+    
+    // Calculate the maximum ticks that correspond to available satellite data
+    let maxTicksForAvailableZoom = ((maxAvailableZoomAtLocation - minZoom) / fullZoomRange) * maxTicksAtLocation;
+    
     console.log(`[${timestamp}] Zoom calculation:`, {
       oldTicks: cumulativeTicks,
       delta: jsonData.vector.delta,
       newTicks: newTicks,
       maxTicksAtLocation: maxTicksAtLocation,
-      wouldBeOutOfBounds: (newTicks < 0 || newTicks > maxTicksAtLocation)
+      maxAvailableZoomAtLocation: maxAvailableZoomAtLocation,
+      calculatedZoomLevel: calculatedZoomLevel,
+      maxTicksForAvailableZoom: maxTicksForAvailableZoom,
+      wouldBeOutOfBounds: (newTicks < 0 || newTicks > maxTicksAtLocation),
+      wouldExceedSatelliteData: newTicks > maxTicksForAvailableZoom
     });
     
+    // First check basic bounds
     if (newTicks < 0 || newTicks > maxTicksAtLocation) {
         console.log(`[${timestamp}] ZOOM IGNORED: Out-of-bounds ticks ${newTicks} not in [0, ${maxTicksAtLocation}]`);
         return;
     }
-    cumulativeTicks = newTicks;
+    
+    // Then clamp ticks to satellite data availability for immediate responsiveness
+    // This prevents accumulating "useless" ticks beyond available data
+    let clampedTicks = Math.min(newTicks, maxTicksForAvailableZoom);
+    
+    if (clampedTicks !== newTicks) {
+        console.log(`[${timestamp}] 📍 TICKS CLAMPED BY SATELLITE DATA: Would be ${newTicks}, clamped to ${clampedTicks.toFixed(1)} (immediate zoom reversal)`);
+    }
+    
+    cumulativeTicks = clampedTicks;
 
-    // Map cumulativeTicks to zoom level using continuous fractional calculation
-    // 0 ticks => minZoom, maxTicksAtLocation => maxZoom
-    let zoomRange = maxZoom - minZoom;
-    let zoomLevel = minZoom + (cumulativeTicks / maxTicksAtLocation) * zoomRange;
+    // Recalculate zoom level using the clamped ticks
+    calculatedZoomLevel = minZoom + (cumulativeTicks / maxTicksAtLocation) * fullZoomRange;
+    
+    // Final zoom level (should already be within satellite limits due to tick clamping)
+    let clampedZoomLevel = Math.min(calculatedZoomLevel, maxAvailableZoomAtLocation);
     
     console.log(`[${timestamp}] Zoom level calculation:`, {
       cumulativeTicks,
       maxTicksAtLocation,
       minZoom,
       maxZoom,
-      zoomRange,
-      calculatedZoomLevel: zoomLevel,
+      fullZoomRange,
+      calculatedZoomLevel: calculatedZoomLevel,
+      maxAvailableZoomAtLocation,
+      clampedZoomLevel: clampedZoomLevel,
+      wasClampedBySatelliteData: clampedZoomLevel < calculatedZoomLevel,
+      ticksClampingEnabled: true,
+      immediateZoomReversalReady: cumulativeTicks < maxTicksForAvailableZoom,
       previousMapZoom: map.getZoom()
     });
 
     // TRIP WIRE: Check for unexpectedly large zoom level changes
     if (lastZoomLevel !== null) {
-      const zoomLevelChange = Math.abs(zoomLevel - lastZoomLevel);
+      const zoomLevelChange = Math.abs(clampedZoomLevel - lastZoomLevel);
       if (zoomLevelChange > ZOOM_JUMP_THRESHOLD) {
         console.error(`[${timestamp}] 🚨 TRIP WIRE: LARGE ZOOM LEVEL JUMP!`);
         console.error(`[${timestamp}] 🚨 Zoom level changed by ${zoomLevelChange} (threshold: ${ZOOM_JUMP_THRESHOLD})`);
-        console.error(`[${timestamp}] 🚨 Previous zoom level: ${lastZoomLevel}, New zoom level: ${zoomLevel}`);
+        console.error(`[${timestamp}] 🚨 Previous zoom level: ${lastZoomLevel}, New zoom level: ${clampedZoomLevel}`);
         console.error(`[${timestamp}] 🚨 Delta that caused jump: ${jsonData.vector.delta}`);
         console.error(`[${timestamp}] 🚨 Cumulative ticks: ${cumulativeTicks}, Max ticks: ${maxTicksAtLocation}`);
+        console.error(`[${timestamp}] 🚨 Calculated zoom: ${calculatedZoomLevel}, Clamped to: ${clampedZoomLevel}`);
         console.error(`[${timestamp}] 🚨 Raw message:`, raw);
         console.trace(`[${timestamp}] 🚨 Stack trace for zoom jump`);
         
         // Additional diagnostic info
         console.error(`[${timestamp}] 🚨 Diagnostic info:`, {
           currentMapZoomBeforeChange: map.getZoom(),
-          calculatedZoomRange: zoomRange,
-          ticksToZoomRatio: zoomRange / maxTicksAtLocation,
-          maxTicksAtLocationWhenJumpOccurred: maxTicksAtLocation,
+          calculatedZoomRange: fullZoomRange,
+          ticksToZoomRatio: fullZoomRange / maxTicksAtLocation,
+          maxAvailableZoomAtLocation: maxAvailableZoomAtLocation,
           actualThresholdUsed: ZOOM_JUMP_THRESHOLD
         });
       }
     }
 
-    // Set the map zoom
+    // Set the map zoom using the clamped value
     if (typeof map.setZoom === "function") {
         // Track that we're about to set zoom from our code
         window.lastZoomFromOurCode = Date.now();
-        map.setZoom(zoomLevel);
-        console.log(`[${timestamp}] ZOOM APPLIED: Set map zoom to ${zoomLevel}`);
-        lastZoomLevel = zoomLevel; // Update for next comparison
+        map.setZoom(clampedZoomLevel);
+        console.log(`[${timestamp}] ZOOM APPLIED: Set map zoom to ${clampedZoomLevel} (calculated: ${calculatedZoomLevel})`);
+        
+        // Log when zoom is limited by satellite data
+        if (clampedZoomLevel < calculatedZoomLevel) {
+          console.log(`[${timestamp}] 📍 ZOOM LIMITED BY SATELLITE DATA: Would be ${calculatedZoomLevel.toFixed(3)}, limited to ${clampedZoomLevel.toFixed(3)}`);
+        }
+        
+        lastZoomLevel = clampedZoomLevel; // Update for next comparison
         
         // Add to zoom history for derivative analysis
-        addZoomToHistory(zoomLevel, jsonData.vector.delta, false); // Not a pan event
+        addZoomToHistory(clampedZoomLevel, jsonData.vector.delta, false); // Not a pan event
     } else {
         console.error(`[${timestamp}] ZOOM FAILED: map.setZoom is not a function`);
     }
