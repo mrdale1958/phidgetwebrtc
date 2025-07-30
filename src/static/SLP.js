@@ -206,6 +206,7 @@ function doZoom(newLayer) {
         }
       }
     }
+    window.lastZoomFromOurCode = Date.now();
     map.setZoom(Math.min(maxZoom,Math.max(minZoom,zoomLayers[newLayer]['mapZoom'])));
     lastZoom = newLayer;
     console.log("entered layer " + newLayer + " at " + map.getCenter());
@@ -264,6 +265,7 @@ function doZoom(newLayer) {
         }
       }
     }
+    window.lastZoomFromOurCode = Date.now();
     map.setZoom(Math.min(maxZoom,Math.max(minZoom,zoomLayers[newLayer]['mapZoom'])));
     lastZoom = newLayer;
   }
@@ -394,7 +396,33 @@ function initializemap(WebRTConnection) {
     });
 
     map.addListener('zoom_changed', function() {
-      //console.log("got new zoom", map.getZoom(), zoomLayers[currentZoom]);
+      const timestamp = new Date().toISOString();
+      const currentMapZoom = map.getZoom();
+      
+      console.log(`[${timestamp}] 🗺️  MAPS API ZOOM_CHANGED EVENT: ${currentMapZoom}`);
+      
+      // Add to zoom history for derivative analysis - this catches ALL zoom changes
+      addZoomToHistory(currentMapZoom, 0, false); // delta=0 since we don't know the source
+      
+      // Check if this zoom change was NOT from our own zoom gesture handling
+      const timeSinceLastOurZoom = Date.now() - (window.lastZoomFromOurCode || 0);
+      if (timeSinceLastOurZoom > 100) { // If it's been >100ms since we set zoom
+        console.warn(`[${timestamp}] ⚠️  EXTERNAL ZOOM CHANGE! Map zoom changed to ${currentMapZoom} from unknown source (${timeSinceLastOurZoom}ms since our last zoom)`);
+        console.warn(`[${timestamp}] ⚠️  This could be: user gesture, API call, bounds change, or other Google Maps behavior`);
+        
+        // TRIP WIRE: Unexpected zoom change from unknown source
+        if (lastZoomLevel !== null) {
+          const zoomDiff = Math.abs(currentMapZoom - lastZoomLevel);
+          if (zoomDiff > 0.001) { // Any meaningful zoom change
+            console.error(`[${timestamp}] 🚨 TRIP WIRE: UNEXPECTED EXTERNAL ZOOM CHANGE!`);
+            console.error(`[${timestamp}] 🚨 Zoom changed by ${zoomDiff.toFixed(6)} levels from external source`);
+            console.error(`[${timestamp}] 🚨 Previous: ${lastZoomLevel}, New: ${currentMapZoom}`);
+            console.error(`[${timestamp}] 🚨 Time since our last zoom: ${timeSinceLastOurZoom}ms`);
+          }
+        }
+      } else {
+        console.log(`[${timestamp}] ✅ Expected zoom change from our code (${timeSinceLastOurZoom}ms ago)`);
+      }
     });
 
     // Load GeoJson features
@@ -410,6 +438,7 @@ function initializemap(WebRTConnection) {
     });
 
     marker.addListener('gmp-click', function() {
+      window.lastZoomFromOurCode = Date.now();
       map.setZoom(8);
       map.setCenter(marker.getPosition());
     });  
@@ -986,6 +1015,8 @@ if (typeof raw === "string") {
 
     // Set the map zoom
     if (typeof map.setZoom === "function") {
+        // Track that we're about to set zoom from our code
+        window.lastZoomFromOurCode = Date.now();
         map.setZoom(zoomLevel);
         console.log(`[${timestamp}] ZOOM APPLIED: Set map zoom to ${zoomLevel}`);
         lastZoomLevel = zoomLevel; // Update for next comparison
