@@ -54,6 +54,31 @@ let cumulativeTicks = 0; // Add at the top-level (if not already present)
 let maxTicksAtLocation = maxClicks; // Will be set by MaxZoomService
 let maxZoomService = null; // Initialize as null
 
+// Configuration flags
+const ENABLE_MAX_ZOOM_SERVICE = true; // Set to true to enable MaxZoomService dynamic zoom boundaries
+const ENABLE_FRACTIONAL_ZOOM = true; // Set to true to enable fractional zoom levels (may cause oscillation)
+
+/*
+ * ZOOM OSCILLATION ANALYSIS FINDINGS:
+ * 
+ * Root Cause: Google Maps accepts fractional zoom values via setZoom() but then 
+ * systematically snaps them back to preferred values (often integers) through the 
+ * zoom_changed event. This creates a fighting loop between our continuous fractional 
+ * calculations and Google's internal correction mechanisms.
+ * 
+ * Time Series Analysis Results:
+ * - Sustained Zoom: 63 events in 101ms with 10 snap-backs detected
+ * - Oscillation Period: 102 events in 220ms with 81 rapid oscillations  
+ * - Pattern: SET fractional → REPORT fractional → REPORT integer (snap-back)
+ * 
+ * Browser Behavior: This appears to be consistent across browsers as it's a 
+ * Google Maps API behavior, not browser-specific. The isFractionalZoomEnabled 
+ * option defaults to true for vector maps but the snap-back behavior still occurs.
+ * 
+ * Solution: Either disable fractional zoom entirely or implement logic to detect 
+ * and avoid fighting Google's zoom corrections.
+ */
+
 // Throttle settings for MaxZoomService calls
 let maxZoomServicePending = false;
 let maxZoomServiceLastCall = 0;
@@ -69,6 +94,114 @@ const ZOOM_HISTORY_SIZE = 20; // Keep last 20 zoom events for derivative analysi
 const ZOOM_VELOCITY_THRESHOLD = 0.01; // Alert if zoom velocity exceeds this per second
 const ZOOM_ACCELERATION_THRESHOLD = 0.005; // Alert if zoom acceleration exceeds this per second²
 const PAN_ZOOM_CORRELATION_WINDOW = 2000; // Look for zoom changes within 2 seconds of pan events
+
+// Time series data collection for zoom oscillation analysis
+let zoomTimeSeriesData = []; // Array of {timestamp, type: 'set'|'reported', value, source} objects
+const ZOOM_TIMESERIES_MAX_SIZE = 500; // Keep last 500 zoom events for plotting
+
+// --- Function to add zoom data to time series collection ---
+function addZoomToTimeSeries(zoomValue, type, source = '') {
+  const timestamp = Date.now();
+  zoomTimeSeriesData.push({
+    timestamp,
+    type, // 'set' or 'reported'
+    value: zoomValue,
+    source // 'zoom_gesture', 'pan_operation', 'zoom_changed_event', etc.
+  });
+  
+  // Keep only recent data
+  if (zoomTimeSeriesData.length > ZOOM_TIMESERIES_MAX_SIZE) {
+    zoomTimeSeriesData.shift();
+  }
+}
+
+// --- Function to generate time series plot of zoom values ---
+function generateZoomTimeSeriesPlot() {
+  if (zoomTimeSeriesData.length < 2) {
+    console.log("Not enough zoom data for plotting (need at least 2 points)");
+    return;
+  }
+  
+  console.log("🎯 ZOOM TIME SERIES PLOT DATA:");
+  console.log("=".repeat(80));
+  
+  // Get time range
+  const firstTime = zoomTimeSeriesData[0].timestamp;
+  const lastTime = zoomTimeSeriesData[zoomTimeSeriesData.length - 1].timestamp;
+  const totalTimeSpan = lastTime - firstTime;
+  
+  console.log(`Time range: ${totalTimeSpan}ms (${(totalTimeSpan/1000).toFixed(2)}s)`);
+  console.log(`Data points: ${zoomTimeSeriesData.length}`);
+  console.log("");
+  
+  // Separate set vs reported values
+  const setValues = zoomTimeSeriesData.filter(d => d.type === 'set');
+  const reportedValues = zoomTimeSeriesData.filter(d => d.type === 'reported');
+  
+  console.log(`📤 Values we SET (${setValues.length} points):`);
+  setValues.forEach((d, i) => {
+    const relativeTime = ((d.timestamp - firstTime) / 1000).toFixed(3);
+    console.log(`  ${relativeTime}s: ${d.value.toFixed(6)} (${d.source})`);
+  });
+  
+  console.log("");
+  console.log(`📥 Values Google REPORTED (${reportedValues.length} points):`);
+  reportedValues.forEach((d, i) => {
+    const relativeTime = ((d.timestamp - firstTime) / 1000).toFixed(3);
+    console.log(`  ${relativeTime}s: ${d.value.toFixed(6)} (${d.source})`);
+  });
+  
+  // Look for oscillation patterns
+  console.log("");
+  console.log("🔍 OSCILLATION ANALYSIS:");
+  console.log("-".repeat(40));
+  
+  // Check for rapid back-and-forth between set and reported values
+  let oscillations = 0;
+  let maxDeviation = 0;
+  
+  for (let i = 1; i < zoomTimeSeriesData.length; i++) {
+    const prev = zoomTimeSeriesData[i-1];
+    const curr = zoomTimeSeriesData[i];
+    const timeDiff = curr.timestamp - prev.timestamp;
+    const valueDiff = Math.abs(curr.value - prev.value);
+    
+    if (timeDiff < 100 && valueDiff > 0.001) { // Quick changes > 0.001 zoom levels
+      oscillations++;
+      maxDeviation = Math.max(maxDeviation, valueDiff);
+      
+      const relativeTime = ((curr.timestamp - firstTime) / 1000).toFixed(3);
+      console.log(`  ${relativeTime}s: ${prev.type}=${prev.value.toFixed(6)} → ${curr.type}=${curr.value.toFixed(6)} (Δ=${valueDiff.toFixed(6)}, ${timeDiff}ms)`);
+    }
+  }
+  
+  console.log(`Total rapid oscillations detected: ${oscillations}`);
+  console.log(`Maximum deviation: ${maxDeviation.toFixed(6)} zoom levels`);
+  
+  // Calculate correlation between set and reported values
+  if (setValues.length > 0 && reportedValues.length > 0) {
+    const avgSet = setValues.reduce((sum, d) => sum + d.value, 0) / setValues.length;
+    const avgReported = reportedValues.reduce((sum, d) => sum + d.value, 0) / reportedValues.length;
+    
+    console.log("");
+    console.log("📊 STATISTICAL SUMMARY:");
+    console.log(`Average SET value: ${avgSet.toFixed(6)}`);
+    console.log(`Average REPORTED value: ${avgReported.toFixed(6)}`);
+    console.log(`Difference: ${Math.abs(avgSet - avgReported).toFixed(6)}`);
+  }
+  
+  console.log("=".repeat(80));
+  
+  // Also return the raw data for external plotting tools
+  return {
+    data: zoomTimeSeriesData,
+    setValues,
+    reportedValues,
+    oscillations,
+    maxDeviation,
+    timeSpan: totalTimeSpan
+  };
+}
 
 // --- SVG-based instruction rendering ---
 function setInstructions(texta, textb) {
@@ -320,6 +453,7 @@ function initializemap(WebRTConnection) {
       backgroundColor: '#000000',
       mapTypeId: google.maps.MapTypeId.HYBRID,
       mapId: '742e3d713d326414c8d039bd',
+      isFractionalZoomEnabled: ENABLE_FRACTIONAL_ZOOM,
     };
     map = new google.maps.Map(mapCanvas, mapOptions);
     map.data.setStyle({
@@ -401,6 +535,9 @@ function initializemap(WebRTConnection) {
       
       console.log(`[${timestamp}] 🗺️  MAPS API ZOOM_CHANGED EVENT: ${currentMapZoom}`);
       
+      // Add to time series data collection
+      addZoomToTimeSeries(currentMapZoom, 'reported', 'zoom_changed_event');
+      
       // Add to zoom history for derivative analysis - this catches ALL zoom changes
       addZoomToHistory(currentMapZoom, 0, false); // delta=0 since we don't know the source
       
@@ -443,10 +580,12 @@ function initializemap(WebRTConnection) {
       map.setCenter(marker.getPosition());
     });  
 
-    // Initialize MaxZoomService if available
-    if (typeof google !== 'undefined' && google.maps && google.maps.MaxZoomService) {
+    // Initialize MaxZoomService if available and enabled
+    if (ENABLE_MAX_ZOOM_SERVICE && typeof google !== 'undefined' && google.maps && google.maps.MaxZoomService) {
       maxZoomService = new google.maps.MaxZoomService();
-      console.log(`[${new Date().toISOString()}] MaxZoomService initialized successfully`);
+      console.log(`[${new Date().toISOString()}] MaxZoomService initialized successfully (ENABLED)`);
+    } else if (!ENABLE_MAX_ZOOM_SERVICE) {
+      console.log(`[${new Date().toISOString()}] MaxZoomService DISABLED by configuration flag`);
     } else {
       console.warn(`[${new Date().toISOString()}] MaxZoomService not available, using default maxTicksAtLocation: ${maxTicksAtLocation}`);
     }
@@ -588,10 +727,16 @@ function updateMaxTicksAtLocation(latLng) {
     maxZoomServicePending,
     timeSinceLastCall: Date.now() - maxZoomServiceLastCall,
     maxZoomThrottleMs,
-    maxZoomServiceAvailable: maxZoomService !== null
+    maxZoomServiceAvailable: maxZoomService !== null,
+    maxZoomServiceEnabled: ENABLE_MAX_ZOOM_SERVICE
   });
   
-  // Check if MaxZoomService is available
+  // Check if MaxZoomService is enabled and available
+  if (!ENABLE_MAX_ZOOM_SERVICE) {
+    console.log(`[${timestamp}] MaxZoomService disabled by configuration, keeping current maxTicksAtLocation: ${maxTicksAtLocation}`);
+    return;
+  }
+  
   if (!maxZoomService) {
     console.log(`[${timestamp}] MaxZoomService not available, keeping current maxTicksAtLocation: ${maxTicksAtLocation}`);
     return;
@@ -975,7 +1120,7 @@ if (typeof raw === "string") {
     }
     cumulativeTicks = newTicks;
 
-    // Map cumulativeTicks to zoom level
+    // Map cumulativeTicks to zoom level using continuous fractional calculation
     // 0 ticks => minZoom, maxTicksAtLocation => maxZoom
     let zoomRange = maxZoom - minZoom;
     let zoomLevel = minZoom + (cumulativeTicks / maxTicksAtLocation) * zoomRange;
