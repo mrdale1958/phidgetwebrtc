@@ -35,6 +35,19 @@ html, body{
     
 }
 
+#latlng-indicator {
+      position: 'absolute';
+      top: '120px'; 
+      left: '50%';
+      transform: 'translateX(-50%)';
+      color: '#fff';
+
+      font-size: '24px';
+      font-family: 'Helvetica Neue, Arial, sans-serif';
+      text-align: 'center';
+      z-index: '1000';
+}
+
 imgnot{
   
     -webkit-transition: 3s;

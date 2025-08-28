@@ -35,7 +35,7 @@ config = {
     'tiltSampleRate' : 0.1,
     'tiltThreshold' : 0.022,
     'flipX' : 1,
-    'flipY' : -1,
+    'flipY' : 1,
     'flipZ' : -1,
 }
 tilter = None

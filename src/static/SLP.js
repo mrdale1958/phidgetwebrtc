@@ -422,6 +422,23 @@ function initializemap(WebRTConnection) {
     // Run pan analysis as soon as the map is loaded
     triggerPanAnalysisIfNeeded(map.getCenter());
 
+    // --- Add lat/lng indicator below instructions ---
+    let latLngIndicator = document.getElementById('latlng-indicator');
+    if (!latLngIndicator) {
+      latLngIndicator = document.createElement('div');
+     
+      document.body.appendChild(latLngIndicator);
+    }
+
+    function updateLatLngIndicator() {
+      if (!map) return;
+      const center = map.getCenter();
+      if (!center) return;
+      latLngIndicator.textContent = `Latitude: ${center.lat().toFixed(6)}, Longitude: ${center.lng().toFixed(6)}`;
+    }
+    updateLatLngIndicator();
+    map.addListener('center_changed', updateLatLngIndicator);
+
   
    /*  map.addListener('satellite_data_limit', (event) => {
       console.log('High resolution satellite data no longer available');
